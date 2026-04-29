@@ -1332,9 +1332,12 @@ async function loadPhotos(taskId){
   if(!data||!data.length){grid.innerHTML='<span style="color:var(--text-tertiary);font-size:12px">No photos yet.</span>';return;}
   const isManager=currentRole==='manager';
   grid.innerHTML=data.map(p=>{
-    const url=sb.storage.from('task-photos').getPublicUrl(p.path).data.publicUrl;
+    const{data:urlData}=sb.storage.from('task-photos').getPublicUrl(p.path);
+    const url=urlData.publicUrl;
+    console.log('Photo URL:',url);
     return`<div class="photo-thumb">
-      <img src="${url}" onclick="openLightbox('${url}')" loading="lazy"/>
+      <img src="${url}" onclick="openLightbox('${url}')" loading="lazy"
+        onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='none');this.parentElement.innerHTML='<span style=\'color:var(--text-tertiary);font-size:11px;padding:4px\'>Error</span>'" />
       ${isManager?`<button class="photo-del" onclick="deletePhoto('${p.id}','${p.path}')">✕</button>`:''}
     </div>`;
   }).join('');
@@ -1419,4 +1422,16 @@ initAuth();
       onkeydown="if(event.key==='Enter')savePwd()" />
     <div style="font-size:12px;color:var(--text-secondary);margin:10px 0" id="pwdMsg"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn-secondary" onclick="
+      <button class="btn-secondary" onclick="closePwdModal()">Cancel</button>
+      <button class="btn-primary" onclick="savePwd()">Save password</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lightbox" id="lightbox" onclick="if(event.target===this)closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+  <img id="lbImg" src="" alt="Photo" />
+</div>
+</body>
+</html>
