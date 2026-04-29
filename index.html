@@ -313,9 +313,43 @@
     .hidden{display:none!important}
     .delete-btn{color:#A32D2D!important}
     .delete-btn:hover{background:#FCEBEB!important}
+
+    /* LOGIN */
+    .login-screen{position:fixed;inset:0;background:var(--bg-secondary);z-index:500;
+      display:flex;align-items:center;justify-content:center}
+    .login-card{background:var(--bg-primary);border:0.5px solid var(--border);
+      border-radius:var(--radius-lg);padding:36px 32px;width:100%;max-width:360px;
+      box-shadow:var(--shadow-md);text-align:center}
+    .login-logo{width:44px;height:44px;background:var(--accent);border-radius:10px;
+      display:flex;align-items:center;justify-content:center;color:white;
+      font-size:20px;font-weight:700;margin:0 auto 14px}
+    .login-title{font-size:20px;font-weight:600;margin-bottom:4px}
+    .login-sub{font-size:13px;color:var(--text-tertiary);margin-bottom:24px}
+    .login-input{width:100%;border:0.5px solid var(--border-md);border-radius:var(--radius-md);
+      padding:10px 12px;font-size:14px;font-family:inherit;background:var(--bg-primary);
+      color:var(--text-primary);margin-bottom:10px;box-sizing:border-box}
+    .login-input:focus{outline:none;border-color:var(--accent)}
+    .login-btn{width:100%;background:var(--accent);color:white;border:none;
+      padding:10px;border-radius:var(--radius-md);font-size:14px;font-weight:500;
+      cursor:pointer;font-family:inherit;transition:background 0.12s}
+    .login-btn:hover{background:var(--accent-hover)}
+    .login-msg{font-size:13px;color:var(--text-secondary);margin-top:14px;min-height:20px}
   </style>
 </head>
 <body>
+
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">T</div>
+    <div class="login-title">Task Tracker</div>
+    <div class="login-sub">Newforest</div>
+    <input class="login-input" type="email" id="loginEmail" placeholder="your@email.com"
+      onkeydown="if(event.key==='Enter')sendMagicLink()" />
+    <button class="login-btn" onclick="sendMagicLink()">Send login link</button>
+    <div class="login-msg" id="loginMsg"></div>
+  </div>
+</div>
 
 <div class="mob-overlay" id="mobOverlay" onclick="closeMobSidebar()"></div>
 
@@ -382,10 +416,13 @@
         <span class="nav-icon" style="font-size:12px">◈</span> Administration <span class="nav-badge" id="nb-l-Admin">0</span></div>
     </div>
   </div>
-  <div class="sidebar-user">
-    <div class="avatar" style="background:#EEEDFE;color:#3C3489;width:30px;height:30px;font-size:11px;border:none">M</div>
-    <div><div style="font-size:13px;font-weight:500">Manager</div>
-    <div style="font-size:11px;color:var(--text-tertiary)">Admin</div></div>
+  <div class="sidebar-user" onclick="signOut()" title="Click to sign out">
+    <div class="avatar" id="sidebarAvatar" style="background:#EEEDFE;color:#3C3489;width:30px;height:30px;font-size:11px;border:none">?</div>
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:500" id="sidebarUserName">…</div>
+      <div style="font-size:11px;color:var(--text-tertiary)" id="sidebarUserRole"></div>
+    </div>
+    <div style="font-size:10px;color:var(--text-tertiary)">Sign out</div>
   </div>
 </div>
 
@@ -394,7 +431,7 @@
   <div class="mobile-header">
     <button class="mobile-menu-btn" onclick="openMobSidebar()">☰</button>
     <div style="font-size:15px;font-weight:600;flex:1">Task Tracker</div>
-    <button class="btn-primary" style="padding:6px 12px;font-size:12px" onclick="openModal()">+ Task</button>
+    <button class="btn-primary manager-only" style="padding:6px 12px;font-size:12px" onclick="openModal()">+ Task</button>
   </div>
 
   <div class="topbar">
@@ -408,7 +445,7 @@
       <button class="view-btn" id="vbList" onclick="setView('list','sideNav-list')">List</button>
     </div>
     <button class="btn-secondary" onclick="toggleFilterBar()">⊟ Filter</button>
-    <button class="btn-primary" onclick="openModal()">+ New task</button>
+    <button class="btn-primary manager-only" onclick="openModal()">+ New task</button>
   </div>
 
   <div class="filter-bar" id="filterBar">
@@ -478,8 +515,8 @@
   <div class="panel-header">
     <button class="panel-close" onclick="closeDetail()">✕</button>
     <div id="panelBadge" style="flex:1;display:flex;gap:6px;flex-wrap:wrap"></div>
-    <button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="openModal(true)">Edit</button>
-    <button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="deleteTask()">Delete</button>
+    <button class="btn-secondary manager-only" style="font-size:12px;padding:5px 10px" onclick="openModal(true)">Edit</button>
+    <button class="btn-secondary delete-btn manager-only" style="font-size:12px;padding:5px 10px" onclick="deleteTask()">Delete</button>
   </div>
   <div class="panel-body" id="panelBody"></div>
   <div class="panel-actions">
@@ -670,6 +707,7 @@ const AV_COLS=[
 
 let tasks=[],openId=null,editId=null,currentView='board';
 let filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
+let currentUser=null,currentRole='worker',currentProfile=null;
 
 function avColor(n){let h=0;for(let c of n)h=(h*31+c.charCodeAt(0))%AV_COLS.length;return AV_COLS[Math.abs(h)];}
 function initials(n){return n.trim().split(/\s+/).slice(0,2).map(w=>w[0].toUpperCase()).join('');}
@@ -680,58 +718,90 @@ function escHtml(s){const d=document.createElement('div');d.appendChild(document
 // ── DB MAPPERS ──
 function fromDb(row){
   return{
-    id:row.id,
-    name:row.name,
-    creatorName:row.creator_name||'',
-    description:row.description||'',
-    project:row.project||'',
-    lineage:row.lineage||'',
-    stage:row.stage||'assigned',
-    priority:row.priority||'medium',
-    assignees:row.assignees||[],
-    startDate:row.start_date||'',
-    dueDate:row.due_date||'',
-    followUpDate:row.follow_up_date||'',
-    estimatedHours:row.estimated_hours||0,
-    percentComplete:row.percent_complete||0,
-    humanResources:row.human_resources||0,
-    location:row.location||'',
-    suggestedSchedule:row.suggested_schedule||'',
-    weatherDependent:row.weather_dependent||'no',
-    weatherNote:row.weather_note||'',
-    steps:row.steps||[],
-    materials:row.materials||[],
-    tools:row.tools||[],
-    taskNotes:row.task_notes||'',
-    createdAt:row.created_at,
+    id:row.id,name:row.name,creatorName:row.creator_name||'',
+    description:row.description||'',project:row.project||'',lineage:row.lineage||'',
+    stage:row.stage||'assigned',priority:row.priority||'medium',
+    assignees:row.assignees||[],startDate:row.start_date||'',dueDate:row.due_date||'',
+    followUpDate:row.follow_up_date||'',estimatedHours:row.estimated_hours||0,
+    percentComplete:row.percent_complete||0,humanResources:row.human_resources||0,
+    location:row.location||'',suggestedSchedule:row.suggested_schedule||'',
+    weatherDependent:row.weather_dependent||'no',weatherNote:row.weather_note||'',
+    steps:row.steps||[],materials:row.materials||[],tools:row.tools||[],
+    taskNotes:row.task_notes||'',createdAt:row.created_at,
     updates:(row.task_updates||[]).map(u=>({author:u.author,text:u.text,date:u.date,via:u.via}))
   };
 }
 function toDb(data){
   return{
-    name:data.name,
-    creator_name:data.creatorName||null,
-    description:data.description||null,
-    project:data.project||null,
-    lineage:data.lineage||null,
-    stage:data.stage,
-    priority:data.priority,
-    assignees:data.assignees,
-    start_date:data.startDate||null,
-    due_date:data.dueDate||null,
-    follow_up_date:data.followUpDate||null,
-    estimated_hours:data.estimatedHours||null,
-    percent_complete:data.percentComplete||0,
-    human_resources:data.humanResources||null,
-    location:data.location||null,
-    suggested_schedule:data.suggestedSchedule||null,
-    weather_dependent:data.weatherDependent||'no',
-    weather_note:data.weatherNote||null,
-    steps:data.steps,
-    materials:data.materials,
-    tools:data.tools,
-    task_notes:data.taskNotes||null
+    name:data.name,creator_name:data.creatorName||null,description:data.description||null,
+    project:data.project||null,lineage:data.lineage||null,stage:data.stage,priority:data.priority,
+    assignees:data.assignees,start_date:data.startDate||null,due_date:data.dueDate||null,
+    follow_up_date:data.followUpDate||null,estimated_hours:data.estimatedHours||null,
+    percent_complete:data.percentComplete||0,human_resources:data.humanResources||null,
+    location:data.location||null,suggested_schedule:data.suggestedSchedule||null,
+    weather_dependent:data.weatherDependent||'no',weather_note:data.weatherNote||null,
+    steps:data.steps,materials:data.materials,tools:data.tools,task_notes:data.taskNotes||null
   };
+}
+
+// ── AUTH ──
+async function sendMagicLink(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const msg=document.getElementById('loginMsg');
+  if(!email){msg.textContent='Please enter your email.';return;}
+  msg.textContent='Sending…';
+  const{error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.href}});
+  if(error){msg.textContent='Error: '+error.message;return;}
+  msg.textContent='✓ Check your email for a login link.';
+}
+
+function showLoginScreen(){document.getElementById('loginScreen').style.display='flex';}
+function hideLoginScreen(){document.getElementById('loginScreen').style.display='none';}
+
+async function onSignedIn(user){
+  currentUser=user;
+  let{data:profile}=await sb.from('profiles').select('*').eq('id',user.id).single();
+  if(!profile){
+    const name=user.email.split('@')[0];
+    await sb.from('profiles').insert({id:user.id,name,role:'worker'});
+    profile={id:user.id,name,role:'worker'};
+  }
+  currentProfile=profile;
+  currentRole=profile.role||'worker';
+  hideLoginScreen();
+  applyRoleUI();
+  await loadData();
+  setupRealtime();
+}
+
+function applyRoleUI(){
+  const isManager=currentRole==='manager';
+  document.querySelectorAll('.manager-only').forEach(el=>el.style.display=isManager?'':'none');
+  const name=currentProfile?.name||currentUser?.email||'User';
+  const av=document.getElementById('sidebarAvatar');
+  const un=document.getElementById('sidebarUserName');
+  const ur=document.getElementById('sidebarUserRole');
+  if(av)av.textContent=initials(name);
+  if(un)un.textContent=name;
+  if(ur)ur.textContent=isManager?'Manager':'Worker';
+  const authorEl=document.getElementById('updateAuthor');
+  if(authorEl){authorEl.value=name;authorEl.style.display='none';}
+}
+
+async function signOut(){
+  await sb.auth.signOut();
+  currentUser=null;currentProfile=null;currentRole='worker';tasks=[];
+  showLoginScreen();
+}
+
+async function initAuth(){
+  const{data:{session}}=await sb.auth.getSession();
+  if(session){await onSignedIn(session.user);}
+  else{showLoginScreen();}
+  sb.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='SIGNED_IN'&&session){await onSignedIn(session.user);}
+    else if(event==='SIGNED_OUT'){showLoginScreen();}
+  });
 }
 
 // ── DATA ──
@@ -748,8 +818,13 @@ function render(){
   updateBadges();updateAssigneeSelect();updateTopbarTitle();
 }
 
+function visibleTasks(){
+  if(currentRole==='worker'&&currentProfile?.name)
+    return tasks.filter(t=>t.assignees.includes(currentProfile.name));
+  return tasks;
+}
 function filteredTasks(){
-  return tasks.filter(t=>{
+  return visibleTasks().filter(t=>{
     if(filter.stage!=='all'&&t.stage!==filter.stage)return false;
     if(filter.lineage!=='all'&&t.lineage!==filter.lineage)return false;
     if(filter.assignee!=='all'&&!t.assignees.includes(filter.assignee))return false;
@@ -764,6 +839,7 @@ function renderBoard(){
   const el=document.getElementById('boardEl');
   el.innerHTML='';
   const ft=filteredTasks();
+  const isManager=currentRole==='manager';
   Object.keys(STAGE).forEach(stage=>{
     const meta=STAGE[stage];
     const all=tasks.filter(t=>t.stage===stage);
@@ -775,7 +851,7 @@ function renderBoard(){
         <div class="col-dot" style="background:${meta.color}"></div>
         <span class="col-title">${meta.label}</span>
         <span class="col-count">${all.length}</span>
-        <button class="col-add" onclick="openModalStage('${stage}')" title="Add task">+</button>
+        ${isManager?`<button class="col-add" onclick="openModalStage('${stage}')" title="Add task">+</button>`:''}
       </div>
       <div class="column-cards">
         ${vis.length===0?'<div class="col-empty">No tasks</div>':vis.map(t=>cardHtml(t)).join('')}
@@ -839,12 +915,25 @@ function openDetail(id){
   const t=tasks.find(x=>x.id===id);if(!t)return;
   const sm=STAGE[t.stage],pm=PRIORITY[t.priority]||PRIORITY.medium;
   const od=isOverdue(t.dueDate,t.stage);
+  const isManager=currentRole==='manager';
 
   document.getElementById('panelBadge').innerHTML=
     `<span class="badge ${pm.badge}">${pm.label}</span><span class="badge ${sm.badge}">${sm.label}</span>${od?'<span class="badge badge-red">Overdue</span>':''}`;
 
   const stageOpts=Object.entries(STAGE).map(([k,v])=>
     `<button class="stage-opt badge ${v.badge}${t.stage===k?' sel':''}" onclick="changeStage('${id}','${k}')">${v.label}</button>`).join('');
+
+  const stageRow=isManager
+    ?`<div class="stage-select-wrap">${stageOpts}</div>`
+    :`<span class="badge ${sm.badge}">${sm.label}</span>`;
+
+  const pctRow=isManager
+    ?`<input type="range" class="progress-range" min="0" max="100" step="1"
+        value="${t.percentComplete||0}"
+        oninput="document.getElementById('pct-lbl').textContent=Math.round(this.value)+'%'"
+        onchange="savePercent('${id}',this.value)" style="flex:1" />
+       <span id="pct-lbl" class="pct-label">${t.percentComplete||0}%</span>`
+    :`<span style="font-size:13px;font-weight:500">${t.percentComplete||0}%</span>`;
 
   const avRow=t.assignees.map(a=>{const c=avColor(a);
     return`<div class="avatar" style="background:${c.bg};color:${c.fg};border:none">${initials(a)}</div><span>${escHtml(a)}</span>`;
@@ -882,58 +971,30 @@ function openDetail(id){
       <div class="panel-title">${escHtml(t.name)}</div>
       <div class="panel-sub">${t.creatorName?escHtml(t.creatorName)+' &nbsp;·&nbsp; ':''}${t.lineage?escHtml(t.lineage)+' &nbsp;·&nbsp; ':''}${escHtml(t.project||'No project')}</div>
       <div class="field-grid">
-        <div class="frl">Stage</div>
-        <div class="frv"><div class="stage-select-wrap">${stageOpts}</div></div>
-        <div class="frl">Priority</div>
-        <div class="frv"><span class="badge ${pm.badge}">${pm.label}</span></div>
-        <div class="frl">Assigned to</div>
-        <div class="frv" style="flex-wrap:wrap;gap:6px">${avRow||'—'}</div>
-        <div class="frl">Start date</div>
-        <div class="frv">${t.startDate?fmtDate(t.startDate):'—'}</div>
-        <div class="frl">Due date</div>
-        <div class="frv" style="${od?'color:#A32D2D;font-weight:500':''}">${t.dueDate?fmtDate(t.dueDate):'—'}</div>
-        <div class="frl">Follow-up</div>
-        <div class="frv">${t.followUpDate?fmtDate(t.followUpDate):'—'}</div>
-        <div class="frl">Est. hours</div>
-        <div class="frv">${t.estimatedHours?t.estimatedHours+' hrs':'—'}</div>
-        <div class="frl">% complete</div>
-        <div class="frv">
-          <input type="range" class="progress-range" min="0" max="100" step="1"
-            value="${t.percentComplete||0}"
-            oninput="document.getElementById('pct-lbl').textContent=Math.round(this.value)+'%'"
-            onchange="savePercent('${id}',this.value)" style="flex:1" />
-          <span id="pct-lbl" class="pct-label">${t.percentComplete||0}%</span>
-        </div>
-        <div class="frl">Resources</div>
-        <div class="frv">${t.humanResources?t.humanResources+' people needed':'—'}</div>
-        <div class="frl">Schedule</div>
-        <div class="frv">${t.suggestedSchedule?escHtml(t.suggestedSchedule):'—'}</div>
+        <div class="frl">Stage</div><div class="frv">${stageRow}</div>
+        <div class="frl">Priority</div><div class="frv"><span class="badge ${pm.badge}">${pm.label}</span></div>
+        <div class="frl">Assigned to</div><div class="frv" style="flex-wrap:wrap;gap:6px">${avRow||'—'}</div>
+        <div class="frl">Start date</div><div class="frv">${t.startDate?fmtDate(t.startDate):'—'}</div>
+        <div class="frl">Due date</div><div class="frv" style="${od?'color:#A32D2D;font-weight:500':''}">${t.dueDate?fmtDate(t.dueDate):'—'}</div>
+        <div class="frl">Follow-up</div><div class="frv">${t.followUpDate?fmtDate(t.followUpDate):'—'}</div>
+        <div class="frl">Est. hours</div><div class="frv">${t.estimatedHours?t.estimatedHours+' hrs':'—'}</div>
+        <div class="frl">% complete</div><div class="frv">${pctRow}</div>
+        <div class="frl">Resources</div><div class="frv">${t.humanResources?t.humanResources+' people needed':'—'}</div>
+        <div class="frl">Schedule</div><div class="frv">${t.suggestedSchedule?escHtml(t.suggestedSchedule):'—'}</div>
         <div class="frl">Weather dep.</div>
-        <div class="frv">
-          ${t.weatherDependent==='yes'
-            ?`<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#E24B4A;display:inline-block"></span> Yes${t.weatherNote?' – '+escHtml(t.weatherNote):''}</span>`
-            :'<span style="color:var(--text-tertiary)">No</span>'}
-        </div>
-        <div class="frl">Location</div>
-        <div class="frv">${t.location?escHtml(t.location):'—'}</div>
+        <div class="frv">${t.weatherDependent==='yes'
+          ?`<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#E24B4A;display:inline-block"></span> Yes${t.weatherNote?' – '+escHtml(t.weatherNote):''}</span>`
+          :'<span style="color:var(--text-tertiary)">No</span>'}</div>
+        <div class="frl">Location</div><div class="frv">${t.location?escHtml(t.location):'—'}</div>
       </div>
     </div>
-
     ${t.description?`<div class="panel-section"><div class="sec-label">Description</div><div style="font-size:13px;color:var(--text-secondary);line-height:1.7">${escHtml(t.description)}</div></div>`:''}
-
+    <div class="panel-section"><div class="sec-label">Process steps</div>${stepsHtml}</div>
     <div class="panel-section">
-      <div class="sec-label">Process steps</div>
-      ${stepsHtml}
-    </div>
-
-    <div class="panel-section">
-      <div class="sec-label">Materials</div>
-      ${matsHtml}
+      <div class="sec-label">Materials</div>${matsHtml}
       ${(t.tools||[]).length?`<div class="sec-label" style="margin-top:12px">Tools</div><div style="display:flex;flex-wrap:wrap;gap:4px">${toolsHtml}</div>`:''}
     </div>
-
     ${t.taskNotes?`<div class="panel-section"><div class="sec-label">Task notes</div><div style="font-size:13px;color:var(--text-secondary);line-height:1.6;background:var(--bg-secondary);padding:10px 12px;border-radius:var(--radius-md)">${escHtml(t.taskNotes)}</div></div>`:''}
-
     <div class="panel-section">
       <div class="sec-label">Progress updates (${(t.updates||[]).length})</div>
       ${updatesHtml||'<div style="color:var(--text-tertiary);font-size:13px">No updates yet.</div>'}
@@ -955,8 +1016,7 @@ async function changeStage(id,stage){
   if(stage==='complete')update.percent_complete=100;
   const{error}=await sb.from('tasks').update(update).eq('id',id);
   if(error){console.error('changeStage:',error);return;}
-  await loadData();
-  openDetail(id);
+  await loadData();openDetail(id);
 }
 
 async function savePercent(id,val){
@@ -968,18 +1028,14 @@ async function savePercent(id,val){
 
 async function postUpdate(){
   const input=document.getElementById('updateInput');
-  const authorEl=document.getElementById('updateAuthor');
   const text=input.value.trim();if(!text||!openId)return;
-  const author=authorEl.value.trim()||'Team member';
-  localStorage.setItem('tt_author',author);
+  const author=currentProfile?.name||currentUser?.email||'Team member';
   const{error}=await sb.from('task_updates').insert({
     task_id:openId,author,text,
     date:new Date().toISOString().split('T')[0],via:'Web app'
   });
   if(error){console.error('postUpdate:',error);return;}
-  input.value='';
-  await loadData();
-  openDetail(openId);
+  input.value='';await loadData();openDetail(openId);
 }
 
 async function deleteTask(){
@@ -987,8 +1043,7 @@ async function deleteTask(){
   if(!confirm('Delete this task? This cannot be undone.'))return;
   const{error}=await sb.from('tasks').delete().eq('id',openId);
   if(error){console.error('deleteTask:',error);return;}
-  closeDetail();
-  await loadData();
+  closeDetail();await loadData();
 }
 
 // ── MODAL ──
@@ -1068,27 +1123,22 @@ async function saveTask(){
   document.getElementById('fName').classList.remove('err');
   const parse=id=>document.getElementById(id).value.split(',').map(s=>s.trim()).filter(Boolean);
   const data={
-    name,
-    description:document.getElementById('fDesc').value.trim(),
-    creatorName:document.getElementById('fCreator').value.trim(),
+    name,description:document.getElementById('fDesc').value.trim(),
+    creatorName:document.getElementById('fCreator').value.trim()||currentProfile?.name||'',
     project:document.getElementById('fProject').value.trim(),
-    stage:document.getElementById('fStage').value,
-    lineage:document.getElementById('fLineage').value,
+    stage:document.getElementById('fStage').value,lineage:document.getElementById('fLineage').value,
     priority:document.getElementById('fPriority').value,
     humanResources:parseInt(document.getElementById('fResources').value)||0,
     weatherDependent:document.getElementById('fWeather').value,
     weatherNote:document.getElementById('fWeatherNote').value.trim(),
     location:document.getElementById('fLocation').value.trim(),
     assignees:parse('fAssignees'),
-    startDate:document.getElementById('fStart').value,
-    dueDate:document.getElementById('fDue').value,
+    startDate:document.getElementById('fStart').value,dueDate:document.getElementById('fDue').value,
     estimatedHours:parseFloat(document.getElementById('fHours').value)||0,
     percentComplete:parseInt(document.getElementById('fPercent').value)||0,
     followUpDate:document.getElementById('fFollowup').value,
     suggestedSchedule:document.getElementById('fSchedule').value.trim(),
-    steps:getSteps(),
-    materials:getMats(),
-    tools:parse('fTools'),
+    steps:getSteps(),materials:getMats(),tools:parse('fTools'),
     taskNotes:document.getElementById('fNotes').value.trim()
   };
   const wasEditing=editId;
@@ -1099,8 +1149,7 @@ async function saveTask(){
     const{error}=await sb.from('tasks').insert(toDb(data));
     if(error){console.error('saveTask insert:',error);return;}
   }
-  closeModal();
-  await loadData();
+  closeModal();await loadData();
   if(wasEditing)openDetail(wasEditing);
 }
 
@@ -1149,16 +1198,17 @@ function sideFilter(type,val,activeId,prefix){
 function updateBadges(){
   const cnt={assigned:0,inprogress:0,review:0,complete:0};
   const linCnt={};
-  tasks.forEach(t=>{
+  const vt=visibleTasks();
+  vt.forEach(t=>{
     if(cnt[t.stage]!==undefined)cnt[t.stage]++;
     if(t.lineage)linCnt[t.lineage]=(linCnt[t.lineage]||0)+1;
   });
-  document.getElementById('nb-all').textContent=tasks.length;
+  document.getElementById('nb-all').textContent=vt.length;
   document.getElementById('nb-assigned').textContent=cnt.assigned;
   document.getElementById('nb-inprogress').textContent=cnt.inprogress;
   document.getElementById('nb-review').textContent=cnt.review;
   document.getElementById('nb-complete').textContent=cnt.complete;
-  document.getElementById('nb-l-all').textContent=tasks.length;
+  document.getElementById('nb-l-all').textContent=vt.length;
   const linMap={'Land & Forest':'nb-l-Land','Farm & Garden':'nb-l-Farm','Building Improvements':'nb-l-BldImpr',
     'Other Building':'nb-l-OtherBld','Site Infrastructure':'nb-l-SiteInfra','Housekeeping':'nb-l-House',
     'Kitchen':'nb-l-Kitchen','Dining':'nb-l-Dining','Administration':'nb-l-Admin'};
@@ -1195,22 +1245,16 @@ function toggleMobFilter(){const fb=document.getElementById('filterBar');fb.styl
 function setupRealtime(){
   sb.channel('db-changes')
     .on('postgres_changes',{event:'*',schema:'public',table:'tasks'},async()=>{
-      await loadData();
-      if(openId)openDetail(openId);
+      await loadData();if(openId)openDetail(openId);
     })
     .on('postgres_changes',{event:'*',schema:'public',table:'task_updates'},async()=>{
-      await loadData();
-      if(openId)openDetail(openId);
+      await loadData();if(openId)openDetail(openId);
     })
     .subscribe();
 }
 
 // ── INIT ──
-loadData().then(()=>{
-  setupRealtime();
-  const savedAuthor=localStorage.getItem('tt_author');
-  if(savedAuthor){const a=document.getElementById('updateAuthor');if(a)a.value=savedAuthor;}
-});
+initAuth();
 
 </script>
 </body>
