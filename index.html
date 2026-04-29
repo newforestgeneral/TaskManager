@@ -221,6 +221,13 @@
       cursor:pointer;background:none;border:none;line-height:1;opacity:0.8}
     .lightbox-close:hover{opacity:1}
 
+
+    .upd-btn{font-size:10px;padding:2px 7px;border-radius:4px;border:0.5px solid var(--border-md);
+      background:transparent;color:var(--text-tertiary);cursor:pointer;font-family:inherit;
+      transition:all 0.12s}
+    .upd-btn:hover{background:var(--bg-secondary);color:var(--text-primary)}
+    .upd-del:hover{background:#501313;color:#F09595;border-color:#501313}
+
     .update-item{border:0.5px solid var(--border);border-radius:var(--radius-md);
       padding:10px 12px;margin-bottom:8px}
     .update-header{display:flex;align-items:center;gap:8px;margin-bottom:5px}
@@ -768,7 +775,7 @@ function fromDb(row){
     weatherDependent:row.weather_dependent||'no',weatherNote:row.weather_note||'',
     steps:row.steps||[],materials:row.materials||[],tools:row.tools||[],
     taskNotes:row.task_notes||'',createdAt:row.created_at,
-    updates:(row.task_updates||[]).map(u=>({author:u.author,text:u.text,date:u.date,via:u.via}))
+    updates:(row.task_updates||[]).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(u=>({id:u.id,author:u.author,text:u.text,date:u.date,via:u.via}))
   };
 }
 function toDb(data){
@@ -1022,15 +1029,22 @@ function openDetail(id){
     ?t.tools.map(tool=>`<span class="badge badge-gray" style="margin:2px">${escHtml(tool)}</span>`).join('')
     :'<span style="color:var(--text-tertiary)">—</span>';
 
+  const isManager=currentRole==='manager';
   const updatesHtml=(t.updates||[]).slice().reverse().map(u=>{
     const c=avColor(u.author);
-    return`<div class="update-item">
+    const uid=u.id||'';
+    const safeText=u.text.replace(/'/g,"\\'");
+    return`<div class="update-item" id="ui-${uid}">
       <div class="update-header">
         <div class="avatar" style="background:${c.bg};color:${c.fg};width:22px;height:22px;font-size:8px;border:none">${initials(u.author)}</div>
         <span class="update-author">${escHtml(u.author)}</span>
         <span class="update-date">${fmtDate(u.date)}</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button class="upd-btn" onclick="editUpdate('${uid}','${safeText}')">Edit</button>
+          ${isManager?`<button class="upd-btn upd-del" onclick="deleteUpdate('${uid}')">Delete</button>`:''}
+        </span>
       </div>
-      <div class="update-text">${escHtml(u.text)}</div>
+      <div class="update-text" id="ut-${uid}">${escHtml(u.text)}</div>
       ${u.via?`<div class="update-via">via ${escHtml(u.via)}</div>`:''}
     </div>`;
   }).join('');
@@ -1117,6 +1131,50 @@ async function postUpdate(){
   });
   if(error){console.error('postUpdate:',error);return;}
   input.value='';await loadData();openDetail(openId);
+}
+
+
+async function editUpdate(uid,currentText){
+  const el=document.getElementById('ut-'+uid);
+  if(!el)return;
+  // If already editing, ignore
+  if(el.querySelector('textarea'))return;
+  const orig=el.textContent;
+  el.innerHTML=`<textarea class="update-textarea" style="margin:4px 0;min-height:60px">${escHtml(orig)}</textarea>
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <button class="btn-primary" style="font-size:12px;padding:4px 10px" onclick="saveUpdateEdit('${uid}')">Save</button>
+      <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="cancelUpdateEdit('${uid}','${currentText.replace(/'/g,"\\'")}')">Cancel</button>
+    </div>`;
+  el.querySelector('textarea').focus();
+}
+function cancelUpdateEdit(uid,orig){
+  const el=document.getElementById('ut-'+uid);
+  if(el)el.innerHTML=escHtml(orig.replace(/\\'/g,"'"));
+}
+async function saveUpdateEdit(uid){
+  const el=document.getElementById('ut-'+uid);
+  if(!el)return;
+  const ta=el.querySelector('textarea');
+  if(!ta)return;
+  const newText=ta.value.trim();
+  if(!newText)return;
+  const{error}=await sb.from('task_updates').update({text:newText}).eq('id',uid);
+  if(error){console.error('editUpdate:',error);return;}
+  el.innerHTML=escHtml(newText);
+}
+async function deleteUpdate(uid){
+  if(!confirm('Delete this update?'))return;
+  const{error}=await sb.from('task_updates').delete().eq('id',uid);
+  if(error){console.error('deleteUpdate:',error);return;}
+  const el=document.getElementById('ui-'+uid);
+  if(el)el.remove();
+  // update the count label
+  const t=tasks.find(x=>x.id===openId);
+  if(t){t.updates=t.updates.filter(u=>u.id!==uid);
+    const lbl=document.querySelector('#panelBody .sec-label');
+    if(lbl&&lbl.textContent.startsWith('Progress'))
+      lbl.textContent=`Progress updates (${t.updates.length})`;
+  }
 }
 
 async function deleteTask(){
