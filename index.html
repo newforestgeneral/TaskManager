@@ -61,6 +61,26 @@
     .main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;min-width:0}
 
     /* TOPBAR */
+
+    .topbar-user{position:relative;flex-shrink:0}
+    .topbar-avatar{width:30px;height:30px;border-radius:50%;background:#EEEDFE;color:#3C3489;
+      border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;
+      display:flex;align-items:center;justify-content:center;transition:opacity 0.12s}
+    .topbar-avatar:hover{opacity:0.8}
+    .user-dropdown{display:none;position:absolute;top:calc(100% + 8px);right:0;
+      background:var(--bg-primary);border:0.5px solid var(--border-md);
+      border-radius:var(--radius-md);box-shadow:var(--shadow-md);min-width:170px;z-index:600}
+    .user-dropdown.open{display:block}
+    .user-dd-info{padding:10px 13px;border-bottom:0.5px solid var(--border)}
+    .user-dd-name{font-size:13px;font-weight:500}
+    .user-dd-role{font-size:11px;color:var(--text-tertiary);margin-top:1px}
+    .user-dd-item{padding:9px 13px;font-size:13px;cursor:pointer;color:var(--text-secondary);
+      display:block;width:100%;text-align:left;border:none;background:transparent;
+      font-family:inherit;transition:background 0.1s}
+    .user-dd-item:hover{background:var(--bg-secondary);color:var(--text-primary)}
+    .user-dd-item.signout{color:#A32D2D}
+    .user-dd-item.signout:hover{background:#FCEBEB}
+
     .topbar{background:var(--bg-primary);border-bottom:0.5px solid var(--border);
       padding:11px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0}
     .topbar-title{font-size:16px;font-weight:600;flex:1}
@@ -479,6 +499,9 @@
     <button class="mobile-menu-btn" onclick="openMobSidebar()">☰</button>
     <div style="font-size:15px;font-weight:600;flex:1">Task Tracker</div>
     <button class="btn-primary manager-only" style="padding:6px 12px;font-size:12px" onclick="openModal()">+ Task</button>
+    <div class="topbar-user" style="position:relative">
+      <button class="topbar-avatar" id="mobAvatar" onclick="toggleUserMenu(event)">?</button>
+    </div>
   </div>
 
   <div class="topbar">
@@ -493,6 +516,17 @@
     </div>
     <button class="btn-secondary" onclick="toggleFilterBar()">⊟ Filter</button>
     <button class="btn-primary manager-only" onclick="openModal()">+ New task</button>
+    <div class="topbar-user" id="topbarUserWrap">
+      <button class="topbar-avatar" id="topbarAvatar" onclick="toggleUserMenu(event)">?</button>
+      <div class="user-dropdown" id="userDropdown">
+        <div class="user-dd-info">
+          <div class="user-dd-name" id="ddUserName">…</div>
+          <div class="user-dd-role" id="ddUserRole"></div>
+        </div>
+        <button class="user-dd-item" onclick="closeUserMenu();openPwdModal()">Set password</button>
+        <button class="user-dd-item signout" onclick="closeUserMenu();signOut()">Sign out</button>
+      </div>
+    </div>
   </div>
 
   <div class="filter-bar" id="filterBar">
@@ -858,6 +892,12 @@ function applyRoleUI(){
   if(av)av.textContent=initials(name);
   if(un)un.textContent=name;
   if(ur)ur.textContent=isManager?'Manager':'Worker';
+  // topbar avatar
+  ['topbarAvatar','mobAvatar'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.textContent=initials(name);
+  });
+  const dn=document.getElementById('ddUserName');if(dn)dn.textContent=name;
+  const dr=document.getElementById('ddUserRole');if(dr)dr.textContent=isManager?'Manager':'Worker';
   const authorEl=document.getElementById('updateAuthor');
   if(authorEl){authorEl.value=name;authorEl.style.display='none';}
 }
@@ -1438,6 +1478,17 @@ function closeLightbox(){
   document.getElementById('lbImg').src='';
 }
 
+
+function toggleUserMenu(e){
+  e.stopPropagation();
+  const dd=document.getElementById('userDropdown');
+  if(dd)dd.classList.toggle('open');
+}
+function closeUserMenu(){
+  const dd=document.getElementById('userDropdown');
+  if(dd)dd.classList.remove('open');
+}
+document.addEventListener('click',()=>closeUserMenu());
 // ── REALTIME ──
 function setupRealtime(){
   sb.channel('db-changes')
