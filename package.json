@@ -1,0 +1,17 @@
+{
+  "name": "newforest-task-bot",
+  "version": "1.0.0",
+  "description": "Slack bot for Newforest Task Tracker",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@slack/bolt": "^3.17.0",
+    "@supabase/supabase-js": "^2.39.0"
+  }
+}
