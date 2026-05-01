@@ -172,7 +172,7 @@ Rules:
       lineage: nt.lineage || null,
       stage: 'assigned',
       percent_complete: 0,
-      creator: userName,
+      creator_name: userName,
     }).select('id').single();
 
     if (createErr) {
