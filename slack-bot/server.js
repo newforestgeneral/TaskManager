@@ -230,20 +230,36 @@ Rules:
       return;
     }
 
-    const { data: created, error: createErr } = await sb.from('tasks').insert({
-      name: nt.name,
-      description: nt.description || '',
-      priority: nt.priority || 'medium',
-      assignees: nt.assignees || [],
-      lineage: nt.lineage || null,
-      stage: 'assigned',
-      percent_complete: 0,
-      creator_name: userName,
-      start_date: nt.start_date || null,
-      due_date: nt.due_date || null,
-      estimated_hours: nt.estimated_hours || null,
-      location: nt.location || null,
-    }).select('id').single();
+    // Fetch default template
+    const { data: tmplRows } = await sb
+      .from('task_templates')
+      .select('*')
+      .eq('is_default', true)
+      .limit(1);
+    const tmpl = tmplRows?.[0] || {};
+
+    // Merge: template provides defaults, bot-inferred values override
+    const newTask = {
+      name:                nt.name,
+      description:         nt.description        || tmpl.description              || '',
+      priority:            nt.priority            || tmpl.default_priority         || 'medium',
+      stage:               tmpl.default_stage                                      || 'assigned',
+      assignees:           nt.assignees?.length   ? nt.assignees : (tmpl.default_assignees || []),
+      lineage:             nt.lineage             || tmpl.default_lineage          || null,
+      estimated_hours:     nt.estimated_hours     || tmpl.default_estimated_hours  || null,
+      weather_dependent:   tmpl.default_weather_dependent                          || 'no',
+      steps:               tmpl.default_steps                                      || [],
+      materials:           tmpl.default_materials                                  || [],
+      tools:               tmpl.default_tools                                      || [],
+      task_notes:          tmpl.default_task_notes                                 || null,
+      percent_complete:    0,
+      creator_name:        userName,
+      start_date:          nt.start_date  || null,
+      due_date:            nt.due_date    || null,
+      location:            nt.location   || null,
+    };
+
+    const { data: created, error: createErr } = await sb.from('tasks').insert(newTask).select('id').single();
 
     if (createErr) {
       console.error('task create error:', createErr);
