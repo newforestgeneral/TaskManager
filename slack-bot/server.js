@@ -99,10 +99,15 @@ Rules:
       }]
     });
 
-    parsed = JSON.parse(response.content[0].text);
+    // Strip markdown code fences if Claude wraps the JSON
+    let rawText = response.content[0].text.trim();
+    rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    console.log('Claude raw response:', rawText);
+    parsed = JSON.parse(rawText);
   } catch (e) {
     console.error('Claude/parse error:', e.message);
-    await say('Sorry, I had trouble understanding that. Could you rephrase your update?');
+    console.error('Claude raw output:', response?.content?.[0]?.text);
+    await say('Sorry, I had trouble processing that. Check Render logs for details.');
     return;
   }
 
