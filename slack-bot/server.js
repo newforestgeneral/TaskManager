@@ -15,30 +15,58 @@ const app = new App({
 
 const sb = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY  // service role — bypasses RLS
+  process.env.SUPABASE_SERVICE_KEY
 );
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// ── LINEAGES ─────────────────────────────────────────────────
+// ── CONSTANTS ────────────────────────────────────────────────
 const LINEAGES = [
-  'Land & Forest',
-  'Farm & Garden',
-  'Building Improvements',
-  'Other Building',
-  'Site Infrastructure',
-  'Housekeeping',
-  'Kitchen',
-  'Dining',
-  'Administration',
+  'Land & Forest', 'Farm & Garden', 'Building Improvements',
+  'Other Building', 'Site Infrastructure', 'Housekeeping',
+  'Kitchen', 'Dining', 'Administration',
 ];
 
-// ── MESSAGE HANDLER ──────────────────────────────────────────
-// Fires for channel messages AND DMs
-app.message(async ({ message, say, client }) => {
-  // Ignore bot messages, edits, deletes
-  if (message.subtype || message.bot_id) return;
+const STAGE_LABELS = {
+  assigned: 'Assigned', inprogress: 'In Progress',
+  review: 'Review', complete: 'Complete',
+};
 
+const SNAP_DELIMITER = '\n[SNAP]:';
+
+// ── HELPERS ──────────────────────────────────────────────────
+function nowLabel() {
+  return new Date().toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'
+  });
+}
+
+function todayISO() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function encodeSnap(snapshot) {
+  return SNAP_DELIMITER + JSON.stringify(snapshot);
+}
+
+function decodeSnap(text) {
+  const idx = text.indexOf(SNAP_DELIMITER);
+  if (idx === -1) return null;
+  try {
+    return JSON.parse(text.slice(idx + SNAP_DELIMITER.length));
+  } catch {
+    return null;
+  }
+}
+
+function visibleText(text) {
+  const idx = text.indexOf(SNAP_DELIMITER);
+  return idx === -1 ? text : text.slice(0, idx);
+}
+
+// ── MESSAGE HANDLER ──────────────────────────────────────────
+app.message(async ({ message, say, client }) => {
+  if (message.subtype || message.bot_id) return;
   await handleMessage({ text: message.text, slackUserId: message.user, say, client });
 });
 
@@ -54,10 +82,10 @@ async function handleMessage({ text, slackUserId, say, client }) {
     console.error('users.info error:', e.message);
   }
 
-  // ── 2. Fetch active tasks from Supabase ──
+  // ── 2. Fetch active tasks ──
   const { data: tasks, error: tasksErr } = await sb
     .from('tasks')
-    .select('id, name, stage, percent_complete, assignees, lineage')
+    .select('id, name, stage, percent_complete, assignees, lineage, priority, description, start_date, due_date, follow_up_date, estimated_hours, location, notes')
     .not('stage', 'eq', 'complete')
     .order('created_at', { ascending: true });
 
@@ -68,78 +96,117 @@ async function handleMessage({ text, slackUserId, say, client }) {
   }
 
   const taskList = (tasks || []).map(t =>
-    `ID: ${t.id} | "${t.name}" | Stage: ${t.stage} | ${t.percent_complete}% | Assignees: ${(t.assignees || []).join(', ') || 'none'}`
+    `ID: ${t.id} | "${t.name}" | Stage: ${t.stage} | ${t.percent_complete}% | Priority: ${t.priority} | Assignees: ${(t.assignees || []).join(', ') || 'none'} | Lineage: ${t.lineage || 'none'}`
   ).join('\n');
 
-  // ── 3. Call Claude to parse intent ──
+  // ── 3. Claude intent detection ──
   let parsed;
   let rawResponse;
   try {
     const response = await claude.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
+      max_tokens: 1000,
       messages: [{
         role: 'user',
         content: `You are a task tracker assistant for Newforest, a UK estate management company.
 The person messaging is named "${userName}".
 Their message: "${text}"
 
-Active tasks in the system:
+Active tasks:
 ${taskList || '(no active tasks yet)'}
 
-Available lineages (departments): ${LINEAGES.join(', ')}
+Available lineages: ${LINEAGES.join(', ')}
+Valid priorities: low, medium, high, urgent
+Valid stages: assigned, inprogress, review, complete
+Date format: YYYY-MM-DD. Today: ${todayISO()}
 
-Determine the INTENT and return ONLY valid JSON — no markdown, no explanation.
+Return ONLY valid JSON — no markdown, no explanation.
 
-If the message is clearly a request to CREATE a new task (e.g. "create task", "add a task", "new task", or describes work that doesn't exist yet):
+────────────────────────────────
+INTENT: create_task
+When the message describes new work that doesn't match any existing task.
 {
   "intent": "create_task",
   "new_task": {
     "name": "short task name",
-    "description": "fuller description of the work",
-    "priority": "low" | "medium" | "high" | "urgent",
-    "assignees": ["Name1", "Name2"],
-    "lineage": "matching lineage from the list, or null"
+    "description": "fuller description",
+    "priority": "low|medium|high|urgent",
+    "assignees": ["Name1"],
+    "lineage": "lineage or null",
+    "start_date": "YYYY-MM-DD or null",
+    "due_date": "YYYY-MM-DD or null",
+    "estimated_hours": number or null,
+    "location": "string or null"
   },
   "needs_clarification": false,
   "clarification_question": null
 }
 
-If the message is a progress UPDATE on an existing task:
+────────────────────────────────
+INTENT: update_task
+When the message is a progress report or a request to change fields on an existing task.
 {
   "intent": "update_task",
-  "matched_task_id": "uuid of the best matching task",
-  "confidence": "high" | "low",
-  "update_text": "clean progress note suitable for a log entry",
-  "percent_complete": null | integer 0-100,
-  "new_stage": null | "assigned" | "inprogress" | "review" | "complete",
+  "matched_task_id": "uuid",
+  "confidence": "high|low",
+  "update_text": "human-readable progress note for the log",
+  "field_changes": {
+    "percent_complete": null or 0-100,
+    "stage": null or stage value,
+    "priority": null or priority value,
+    "name": null or "new name",
+    "description": null or "new description",
+    "lineage": null or "lineage",
+    "add_assignees": null or ["Name"],
+    "remove_assignees": null or ["Name"],
+    "start_date": null or "YYYY-MM-DD",
+    "due_date": null or "YYYY-MM-DD",
+    "follow_up_date": null or "YYYY-MM-DD",
+    "estimated_hours": null or number,
+    "location": null or "string",
+    "notes": null or "text to append"
+  },
   "needs_clarification": false,
   "clarification_question": null
 }
 
-If genuinely unclear (ONLY if you truly cannot determine intent or the key task name is missing):
+────────────────────────────────
+INTENT: revert
+When the message asks to undo or revert the last bot change to a task
+(e.g. "undo that", "revert last change to X", "roll back the gate task").
+{
+  "intent": "revert",
+  "matched_task_id": "uuid or null",
+  "confidence": "high|low",
+  "needs_clarification": false,
+  "clarification_question": null
+}
+
+────────────────────────────────
+INTENT: unclear
+Only if you truly cannot determine intent.
 {
   "intent": "unclear",
   "needs_clarification": true,
   "clarification_question": "one short specific question"
 }
 
+────────────────────────────────
 Rules:
-- If the message mentions a task name that clearly doesn't exist in the active list AND describes new work → intent: create_task
-- Match existing tasks generously — workers use shorthand (e.g. "4 corners" matches "Clear 4 corners trail")
-- For updates: "done"/"finished"/"complete" → new_stage: complete, percent_complete: 100
-- "started"/"begun"/"working on"/"underway" → new_stage: inprogress
-- "ready for check"/"ready for review" → new_stage: review
-- Extract percentages: "halfway" → 50, "nearly done" → 90, "75% done" → 75
-- For task creation: infer priority from urgency words ("urgent", "asap" → urgent; "when you can" → low)
-- For task creation: infer lineage from context (fallen tree → Land & Forest, building work → Building Improvements, etc.)
-- For task creation: infer assignees from message if mentioned (e.g. "assign to Dwayne" → ["Dwayne"])
-- Only set needs_clarification: true if you truly cannot proceed — don't ask if you can make a reasonable inference`
+- Match tasks generously — workers use shorthand
+- "done"/"finished"/"complete" → stage: complete, percent_complete: 100
+- "started"/"working on"/"underway" → stage: inprogress
+- "ready for check"/"ready for review" → stage: review
+- "halfway" → 50, "nearly done" → 90
+- "urgent"/"asap" → priority: urgent; "when you can" → priority: low
+- "assign to X"/"add X" → add_assignees; "remove X"/"unassign X" → remove_assignees
+- Infer lineage from context (fallen tree → Land & Forest, roof work → Building Improvements)
+- "undo"/"revert"/"roll back"/"undo that"/"go back" → intent: revert
+- Only set needs_clarification: true if you truly cannot proceed`
       }]
     });
 
     rawResponse = response.content[0].text.trim();
-    // Strip markdown code fences if present
     rawResponse = rawResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
     console.log('Claude raw response:', rawResponse);
     parsed = JSON.parse(rawResponse);
@@ -150,17 +217,16 @@ Rules:
     return;
   }
 
-  // ── 4. Needs clarification? ──
   if (parsed.needs_clarification) {
     await say(parsed.clarification_question || 'Could you clarify that a bit more?');
     return;
   }
 
-  // ── 5A. CREATE TASK ──────────────────────────────────────────
+  // ── 5A. CREATE TASK ─────────────────────────────────────────
   if (parsed.intent === 'create_task') {
     const nt = parsed.new_task || {};
     if (!nt.name) {
-      await say('I couldn\'t work out a task name from that. Could you give the task a name?');
+      await say('I couldn\'t work out a task name. Could you give the task a name?');
       return;
     }
 
@@ -173,26 +239,40 @@ Rules:
       stage: 'assigned',
       percent_complete: 0,
       creator_name: userName,
+      start_date: nt.start_date || null,
+      due_date: nt.due_date || null,
+      estimated_hours: nt.estimated_hours || null,
+      location: nt.location || null,
     }).select('id').single();
 
     if (createErr) {
       console.error('task create error:', createErr);
-      await say('I understood the request but couldn\'t create the task. Check Render logs.');
+      await say('Understood the request but couldn\'t create the task. Check Render logs.');
       return;
     }
+
+    await sb.from('task_updates').insert({
+      task_id: created.id,
+      author: userName,
+      text: `Task created via Slack by ${userName}.`,
+      date: todayISO(),
+      via: 'Slack Bot',
+    });
 
     const details = [];
     if (nt.priority) details.push(`Priority: ${nt.priority}`);
     if (nt.lineage) details.push(`Lineage: ${nt.lineage}`);
-    if (nt.assignees && nt.assignees.length) details.push(`Assigned to: ${nt.assignees.join(', ')}`);
+    if (nt.assignees?.length) details.push(`Assigned to: ${nt.assignees.join(', ')}`);
+    if (nt.due_date) details.push(`Due: ${nt.due_date}`);
+    if (nt.location) details.push(`Location: ${nt.location}`);
 
-    let confirm = `✅ Task created: *${nt.name}*`;
+    let confirm = `✅ Task created: *${nt.name}* — ${nowLabel()}`;
     if (details.length) confirm += `\n> ${details.join(' · ')}`;
     await say(confirm);
     return;
   }
 
-  // ── 5B. UPDATE TASK ──────────────────────────────────────────
+  // ── 5B. UPDATE TASK ─────────────────────────────────────────
   if (parsed.intent === 'update_task') {
     if (!parsed.matched_task_id) {
       await say('I couldn\'t match that to any active task. Could you mention the task name?');
@@ -201,63 +281,200 @@ Rules:
 
     const task = (tasks || []).find(t => t.id === parsed.matched_task_id);
     const taskName = task?.name || 'Unknown task';
+    const fc = parsed.field_changes || {};
 
-    // Write progress update log entry
-    const today = new Date().toISOString().split('T')[0];
+    // Capture before-snapshot for potential revert
+    const snapshot = {
+      percent_complete: task?.percent_complete,
+      stage: task?.stage,
+      priority: task?.priority,
+      name: task?.name,
+      description: task?.description,
+      lineage: task?.lineage,
+      assignees: task?.assignees,
+      start_date: task?.start_date,
+      due_date: task?.due_date,
+      follow_up_date: task?.follow_up_date,
+      estimated_hours: task?.estimated_hours,
+      location: task?.location,
+      notes: task?.notes,
+    };
+
+    // Build DB update + change log
+    const dbUpdate = {};
+    const changeLines = [];
+
+    if (fc.percent_complete !== null && fc.percent_complete !== undefined) {
+      dbUpdate.percent_complete = fc.percent_complete;
+      changeLines.push(`Progress: ${task?.percent_complete ?? '?'}% → ${fc.percent_complete}%`);
+    }
+    if (fc.stage) {
+      dbUpdate.stage = fc.stage;
+      changeLines.push(`Stage: ${STAGE_LABELS[task?.stage] || task?.stage || '?'} → ${STAGE_LABELS[fc.stage] || fc.stage}`);
+    }
+    if (fc.priority) {
+      dbUpdate.priority = fc.priority;
+      changeLines.push(`Priority: ${task?.priority || '?'} → ${fc.priority}`);
+    }
+    if (fc.name) {
+      dbUpdate.name = fc.name;
+      changeLines.push(`Name: "${taskName}" → "${fc.name}"`);
+    }
+    if (fc.description) {
+      dbUpdate.description = fc.description;
+      changeLines.push(`Description updated`);
+    }
+    if (fc.lineage) {
+      dbUpdate.lineage = fc.lineage;
+      changeLines.push(`Lineage: ${task?.lineage || 'none'} → ${fc.lineage}`);
+    }
+    if (fc.start_date) {
+      dbUpdate.start_date = fc.start_date;
+      changeLines.push(`Start date: ${fc.start_date}`);
+    }
+    if (fc.due_date) {
+      dbUpdate.due_date = fc.due_date;
+      changeLines.push(`Due date: ${fc.due_date}`);
+    }
+    if (fc.follow_up_date) {
+      dbUpdate.follow_up_date = fc.follow_up_date;
+      changeLines.push(`Follow-up: ${fc.follow_up_date}`);
+    }
+    if (fc.estimated_hours !== null && fc.estimated_hours !== undefined) {
+      dbUpdate.estimated_hours = fc.estimated_hours;
+      changeLines.push(`Estimated hours: ${fc.estimated_hours}`);
+    }
+    if (fc.location) {
+      dbUpdate.location = fc.location;
+      changeLines.push(`Location: ${fc.location}`);
+    }
+    if (fc.notes) {
+      const existing = task?.notes || '';
+      dbUpdate.notes = existing
+        ? `${existing}\n\n[${todayISO()} via Slack] ${fc.notes}`
+        : `[${todayISO()} via Slack] ${fc.notes}`;
+      changeLines.push(`Notes updated`);
+    }
+    if (fc.add_assignees?.length || fc.remove_assignees?.length) {
+      let current = [...(task?.assignees || [])];
+      if (fc.remove_assignees?.length) {
+        const toRemove = fc.remove_assignees.map(n => n.toLowerCase());
+        current = current.filter(n => !toRemove.includes(n.toLowerCase()));
+      }
+      if (fc.add_assignees?.length) {
+        const exist = current.map(c => c.toLowerCase());
+        current = [...current, ...fc.add_assignees.filter(n => !exist.includes(n.toLowerCase()))];
+      }
+      dbUpdate.assignees = current;
+      changeLines.push(`Assignees: ${current.join(', ') || 'none'}`);
+    }
+
+    if (Object.keys(dbUpdate).length > 0) {
+      const { error: taskErr } = await sb.from('tasks').update(dbUpdate).eq('id', parsed.matched_task_id);
+      if (taskErr) {
+        console.error('task update error:', taskErr);
+        await say(`Couldn't save changes to *${taskName}*. Check Render logs.`);
+        return;
+      }
+    }
+
+    // Write audit log with embedded snapshot for revert
+    const logParts = [];
+    if (parsed.update_text) logParts.push(parsed.update_text);
+    if (changeLines.length) logParts.push(`Fields changed: ${changeLines.join(' · ')}`);
+
+    const logText = logParts.join('\n') + encodeSnap(snapshot);
+
     const { error: updateErr } = await sb.from('task_updates').insert({
       task_id: parsed.matched_task_id,
       author: userName,
-      text: parsed.update_text,
-      date: today,
-      via: 'Slack',
+      text: logText,
+      date: todayISO(),
+      via: 'Slack Bot',
     });
+    if (updateErr) console.error('task_updates insert error:', updateErr);
 
-    if (updateErr) {
-      console.error('task_updates insert error:', updateErr);
-      await say('I understood the update but couldn\'t save it. Please try again.');
-      return;
-    }
-
-    // Update task fields if inferred
-    const taskUpdates = {};
-    if (parsed.percent_complete !== null && parsed.percent_complete !== undefined) {
-      taskUpdates.percent_complete = parsed.percent_complete;
-    }
-    if (parsed.new_stage) {
-      taskUpdates.stage = parsed.new_stage;
-    }
-
-    if (Object.keys(taskUpdates).length > 0) {
-      const { error: taskErr } = await sb
-        .from('tasks')
-        .update(taskUpdates)
-        .eq('id', parsed.matched_task_id);
-      if (taskErr) console.error('task update error:', taskErr);
-    }
-
-    // Confirm back to Slack
-    const confidenceNote = parsed.confidence === 'low' ? ' _(low confidence match)_' : '';
-    let confirm = `✅ Update logged for *${taskName}*${confidenceNote}`;
-
-    const changes = [];
-    if (parsed.percent_complete !== null && parsed.percent_complete !== undefined) {
-      changes.push(`${parsed.percent_complete}% complete`);
-    }
-    if (parsed.new_stage) {
-      const stageLabel = {
-        assigned: 'Assigned', inprogress: 'In Progress',
-        review: 'Review', complete: 'Complete'
-      }[parsed.new_stage] || parsed.new_stage;
-      changes.push(`stage → ${stageLabel}`);
-    }
-    if (changes.length) confirm += `\n> ${changes.join(' · ')}`;
-
+    const confidenceNote = parsed.confidence === 'low' ? ' _(low confidence)_' : '';
+    let confirm = `✅ *${fc.name || taskName}* updated — ${nowLabel()}${confidenceNote}`;
+    if (changeLines.length) confirm += `\n> ${changeLines.join(' · ')}`;
+    confirm += `\n_Say "undo that" to revert._`;
     await say(confirm);
     return;
   }
 
+  // ── 5C. REVERT ──────────────────────────────────────────────
+  if (parsed.intent === 'revert') {
+    if (!parsed.matched_task_id) {
+      await say('Which task should I revert? Could you mention the task name?');
+      return;
+    }
+
+    const task = (tasks || []).find(t => t.id === parsed.matched_task_id);
+    const taskName = task?.name || 'Unknown task';
+
+    // Find the most recent Slack Bot entry for this task
+    const { data: logs, error: logsErr } = await sb
+      .from('task_updates')
+      .select('id, text, created_at')
+      .eq('task_id', parsed.matched_task_id)
+      .eq('via', 'Slack Bot')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (logsErr || !logs?.length) {
+      await say(`No recent bot changes found for *${taskName}* to revert.`);
+      return;
+    }
+
+    const lastEntry = logs[0];
+    const snapshot = decodeSnap(lastEntry.text);
+
+    if (!snapshot) {
+      await say(`Found a recent bot entry for *${taskName}* but it has no revert data.`);
+      return;
+    }
+
+    // Format when the original change was made
+    const changedAt = new Date(lastEntry.created_at).toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'
+    });
+    const changedDate = new Date(lastEntry.created_at).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'short', timeZone: 'Europe/London'
+    });
+
+    // Apply snapshot back to task
+    const revertData = {};
+    const revertableFields = [
+      'percent_complete', 'stage', 'priority', 'name', 'description',
+      'lineage', 'assignees', 'start_date', 'due_date', 'follow_up_date',
+      'estimated_hours', 'location', 'notes',
+    ];
+    for (const field of revertableFields) {
+      if (snapshot[field] !== undefined) revertData[field] = snapshot[field];
+    }
+
+    const { error: revertErr } = await sb.from('tasks').update(revertData).eq('id', parsed.matched_task_id);
+    if (revertErr) {
+      console.error('revert error:', revertErr);
+      await say(`Couldn't revert *${taskName}*. Check Render logs.`);
+      return;
+    }
+
+    // Log the revert action
+    await sb.from('task_updates').insert({
+      task_id: parsed.matched_task_id,
+      author: userName,
+      text: `Reverted task to state before bot changes made at ${changedAt} on ${changedDate}.`,
+      date: todayISO(),
+      via: 'Slack Bot',
+    });
+
+    await say(`↩️ *${taskName}* reverted to state before changes made at ${changedAt} on ${changedDate}.`);
+    return;
+  }
+
   // Fallback
-  await say('I\'m not sure what you\'d like me to do. You can log a task update or create a new task — just describe it naturally.');
+  await say('I\'m not sure what you\'d like me to do. You can log an update, create a task, or say "undo" to revert a change.');
 }
 
 // ── START ─────────────────────────────────────────────────────
