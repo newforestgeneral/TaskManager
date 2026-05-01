@@ -85,7 +85,7 @@ async function handleMessage({ text, slackUserId, say, client }) {
   // ── 2. Fetch active tasks ──
   const { data: tasks, error: tasksErr } = await sb
     .from('tasks')
-    .select('id, name, stage, percent_complete, assignees, lineage, priority, description, start_date, due_date, follow_up_date, estimated_hours, location, notes')
+    .select('id, name, stage, percent_complete, assignees, lineage, priority, description, start_date, due_date, follow_up_date, estimated_hours, location, task_notes')
     .not('stage', 'eq', 'complete')
     .order('created_at', { ascending: true });
 
@@ -297,7 +297,7 @@ Rules:
       follow_up_date: task?.follow_up_date,
       estimated_hours: task?.estimated_hours,
       location: task?.location,
-      notes: task?.notes,
+      task_notes: task?.task_notes,
     };
 
     // Build DB update + change log
@@ -349,8 +349,8 @@ Rules:
       changeLines.push(`Location: ${fc.location}`);
     }
     if (fc.notes) {
-      const existing = task?.notes || '';
-      dbUpdate.notes = existing
+      const existing = task?.task_notes || '';
+      dbUpdate.task_notes = existing
         ? `${existing}\n\n[${todayISO()} via Slack] ${fc.notes}`
         : `[${todayISO()} via Slack] ${fc.notes}`;
       changeLines.push(`Notes updated`);
@@ -447,7 +447,7 @@ Rules:
     const revertableFields = [
       'percent_complete', 'stage', 'priority', 'name', 'description',
       'lineage', 'assignees', 'start_date', 'due_date', 'follow_up_date',
-      'estimated_hours', 'location', 'notes',
+      'estimated_hours', 'location', 'task_notes',
     ];
     for (const field of revertableFields) {
       if (snapshot[field] !== undefined) revertData[field] = snapshot[field];
