@@ -20,6 +20,10 @@ const sb = createClient(
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ── RECENT TASK MEMORY (per user, resets on server restart) ──
+// Tracks the last task each Slack user created or updated
+const recentTask = new Map(); // slackUserId → { id, name }
+
 // ── CONSTANTS ────────────────────────────────────────────────
 const LINEAGES = [
   'Land & Forest', 'Farm & Garden', 'Building Improvements',
@@ -99,6 +103,11 @@ async function handleMessage({ text, slackUserId, say, client }) {
     `ID: ${t.id} | "${t.name}" | Stage: ${t.stage} | ${t.percent_complete}% | Priority: ${t.priority} | Assignees: ${(t.assignees || []).join(', ') || 'none'} | Lineage: ${t.lineage || 'none'}`
   ).join('\n');
 
+  const lastTouched = recentTask.get(slackUserId);
+  const recentContext = lastTouched
+    ? `\nMost recently created/updated task by this user: ID: ${lastTouched.id} | "${lastTouched.name}"`
+    : '';
+
   // ── 3. Claude intent detection ──
   let parsed;
   let rawResponse;
@@ -114,6 +123,7 @@ Their message: "${text}"
 
 Active tasks:
 ${taskList || '(no active tasks yet)'}
+${recentContext}
 
 Available lineages: ${LINEAGES.join(', ')}
 Valid priorities: low, medium, high, urgent
@@ -202,6 +212,7 @@ Rules:
 - "assign to X"/"add X" → add_assignees; "remove X"/"unassign X" → remove_assignees
 - Infer lineage from context (fallen tree → Land & Forest, roof work → Building Improvements)
 - "undo"/"revert"/"roll back"/"undo that"/"go back" → intent: revert
+- If the message uses "that", "it", "the one I just made", "that task", or any vague reference without naming a task, assume they mean the most recently created/updated task shown above
 - Only set needs_clarification: true if you truly cannot proceed`
       }]
     });
@@ -274,6 +285,8 @@ Rules:
       date: todayISO(),
       via: 'Slack Bot',
     });
+
+    recentTask.set(slackUserId, { id: created.id, name: nt.name });
 
     const details = [];
     if (nt.priority) details.push(`Priority: ${nt.priority}`);
@@ -409,6 +422,8 @@ Rules:
       via: 'Slack Bot',
     });
     if (updateErr) console.error('task_updates insert error:', updateErr);
+
+    recentTask.set(slackUserId, { id: parsed.matched_task_id, name: fc.name || taskName });
 
     const confidenceNote = parsed.confidence === 'low' ? ' _(low confidence)_' : '';
     let confirm = `✅ *${fc.name || taskName}* updated — ${nowLabel()}${confidenceNote}`;
