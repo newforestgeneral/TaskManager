@@ -193,6 +193,18 @@ When the message is a progress report or a request to change fields on an existi
 }
 
 ────────────────────────────────
+INTENT: query_task
+When the message asks for information, details, or status on a task
+(e.g. "tell me about X", "what's the status of X", "info on X", "who's assigned to X", "give me details on X").
+{
+  "intent": "query_task",
+  "matched_task_id": "uuid or null",
+  "confidence": "high|low",
+  "needs_clarification": false,
+  "clarification_question": null
+}
+
+────────────────────────────────
 INTENT: revert
 When the message asks to undo or revert the last bot change to a task
 (e.g. "undo that", "revert last change to X", "roll back the gate task").
@@ -206,7 +218,8 @@ When the message asks to undo or revert the last bot change to a task
 
 ────────────────────────────────
 INTENT: unclear
-Only if you truly cannot determine intent.
+LAST RESORT ONLY. Only use if the message is completely unintelligible or gives zero context.
+If the user has named or described a task at all, never use this — pick the closest intent.
 {
   "intent": "unclear",
   "needs_clarification": true,
@@ -247,7 +260,11 @@ Rules:
 - Infer lineage from context (fallen tree → Land & Forest, roof work → Building Improvements)
 - "undo"/"revert"/"roll back"/"undo that"/"go back" → intent: revert
 - If the message uses "that", "it", "the one I just made", "that task", or any vague reference without naming a task, assume they mean the most recently created/updated task shown above
-- Only set needs_clarification: true if you truly cannot proceed`
+- "tell me about", "info on", "what's the status", "details on", "give me details", "show me" → query_task
+- "info on the task" / "give me the current details" with a recently touched task in context → query_task on that task
+- Match task names generously — "4 corners", "the 4 corners task", "corners task" all match "Clear 4 corners"
+- NEVER ask the user to repeat information they have already provided in the same conversation
+- NEVER use intent: unclear if a task name or reference has been mentioned — always attempt a match`
       }]
     });
 
@@ -469,7 +486,39 @@ Rules:
     return;
   }
 
-  // ── 5C. REVERT ──────────────────────────────────────────────
+  // ── 5C. QUERY TASK ──────────────────────────────────────────
+  if (parsed.intent === 'query_task') {
+    if (!parsed.matched_task_id) {
+      await say('I couldn\'t find that task. Could you give me the task name?');
+      return;
+    }
+
+    const task = (tasks || []).find(t => t.id === parsed.matched_task_id);
+    if (!task) {
+      await say('That task doesn\'t appear to be active. It may be complete or not yet created.');
+      return;
+    }
+
+    const stageLabel = STAGE_LABELS[task.stage] || task.stage;
+    const assignees  = task.assignees?.join(', ') || 'Nobody assigned';
+    const lines = [
+      `*${task.name}*`,
+      `> Stage: ${stageLabel} · Progress: ${task.percent_complete}%`,
+      `> Priority: ${task.priority}${task.lineage ? ` · Lineage: ${task.lineage}` : ''}`,
+      `> Assigned to: ${assignees}`,
+    ];
+    if (task.due_date)        lines.push(`> Due: ${task.due_date}`);
+    if (task.follow_up_date)  lines.push(`> Follow-up: ${task.follow_up_date}`);
+    if (task.location)        lines.push(`> Location: ${task.location}`);
+    if (task.estimated_hours) lines.push(`> Estimated: ${task.estimated_hours}h`);
+    if (task.description)     lines.push(`> _${task.description}_`);
+
+    recentTask.set(slackUserId, { id: task.id, name: task.name });
+    await say(lines.join('\n'));
+    return;
+  }
+
+  // ── 5E. REVERT ──────────────────────────────────────────────
   if (parsed.intent === 'revert') {
     if (!parsed.matched_task_id) {
       await say('Which task should I revert? Could you mention the task name?');
