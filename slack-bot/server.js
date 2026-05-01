@@ -41,7 +41,7 @@ const SNAP_DELIMITER = '\n[SNAP]:';
 // ── HELPERS ──────────────────────────────────────────────────
 function nowLabel() {
   return new Date().toLocaleTimeString('en-GB', {
-    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'
+    hour: '2-digit', minute: '2-digit', timeZone: 'America/Toronto'
   });
 }
 
@@ -108,6 +108,17 @@ async function handleMessage({ text, slackUserId, say, client }) {
     ? `\nMost recently created/updated task by this user: ID: ${lastTouched.id} | "${lastTouched.name}"`
     : '';
 
+  // ── Fetch bot memory ──
+  const { data: memories } = await sb
+    .from('bot_memory')
+    .select('category, key, value')
+    .order('times_used', { ascending: false });
+
+  const memoryContext = memories?.length
+    ? '\nLearned memory (apply these facts to improve accuracy):\n' +
+      memories.map(m => `- [${m.category}] "${m.key}": ${m.value}`).join('\n')
+    : '';
+
   // ── 3. Claude intent detection ──
   let parsed;
   let rawResponse;
@@ -124,6 +135,7 @@ Their message: "${text}"
 Active tasks:
 ${taskList || '(no active tasks yet)'}
 ${recentContext}
+${memoryContext}
 
 Available lineages: ${LINEAGES.join(', ')}
 Valid priorities: low, medium, high, urgent
@@ -200,6 +212,28 @@ Only if you truly cannot determine intent.
   "needs_clarification": true,
   "clarification_question": "one short specific question"
 }
+
+────────────────────────────────
+MEMORY EXTRACTION (add to every response)
+After determining intent, include a "new_memories" array of facts worth remembering for future interactions.
+Only add entries that are genuinely useful and not already covered in the learned memory above.
+Leave the array empty if nothing new is worth remembering.
+"new_memories": [
+  {
+    "category": "alias|location|worker|lineage|correction|general",
+    "key": "the trigger term (short, lowercase)",
+    "value": "the fact to remember"
+  }
+]
+
+Good candidates for new memories:
+- User corrects a lineage, priority, or assignee the bot got wrong → category: correction
+- A new location or area name is mentioned → category: location
+- A shorthand term is used for a task or place → category: alias
+- A worker's name appears with context about their role or area → category: worker
+- A new pattern about what lineage a type of work belongs to → category: lineage
+
+Do NOT add memories for: one-off specifics with no reuse value, task IDs, percentages, dates.
 
 ────────────────────────────────
 Rules:
@@ -298,6 +332,7 @@ Rules:
     let confirm = `✅ Task created: *${nt.name}* — ${nowLabel()}`;
     if (details.length) confirm += `\n> ${details.join(' · ')}`;
     await say(confirm);
+    await saveMemories(parsed.new_memories, text);
     return;
   }
 
@@ -430,6 +465,7 @@ Rules:
     if (changeLines.length) confirm += `\n> ${changeLines.join(' · ')}`;
     confirm += `\n_Say "undo that" to revert._`;
     await say(confirm);
+    await saveMemories(parsed.new_memories, text);
     return;
   }
 
@@ -467,10 +503,10 @@ Rules:
 
     // Format when the original change was made
     const changedAt = new Date(lastEntry.created_at).toLocaleTimeString('en-GB', {
-      hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London'
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Toronto'
     });
     const changedDate = new Date(lastEntry.created_at).toLocaleDateString('en-GB', {
-      day: 'numeric', month: 'short', timeZone: 'Europe/London'
+      day: 'numeric', month: 'short', timeZone: 'America/Toronto'
     });
 
     // Apply snapshot back to task
@@ -504,8 +540,40 @@ Rules:
     return;
   }
 
+  // ── Save any new memories Claude extracted ──
+  await saveMemories(parsed.new_memories, text);
+
   // Fallback
   await say('I\'m not sure what you\'d like me to do. You can log an update, create a task, or say "undo" to revert a change.');
+}
+
+// ── MEMORY SAVE ──────────────────────────────────────────────
+async function saveMemories(newMemories, sourceText) {
+  if (!Array.isArray(newMemories) || !newMemories.length) return;
+
+  for (const mem of newMemories) {
+    if (!mem.category || !mem.key || !mem.value) continue;
+
+    const key = mem.key.toLowerCase().trim();
+
+    // Upsert — update value if key+category already exists, else insert
+    const { error } = await sb.from('bot_memory').upsert(
+      {
+        category:   mem.category,
+        key,
+        value:      mem.value,
+        source:     sourceText?.slice(0, 200) || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'category,key' }
+    );
+
+    if (error) {
+      console.error('bot_memory upsert error:', error.message);
+    } else {
+      console.log(`Memory saved [${mem.category}] "${key}": ${mem.value}`);
+    }
+  }
 }
 
 // ── START ─────────────────────────────────────────────────────
