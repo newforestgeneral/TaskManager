@@ -131,7 +131,7 @@ function stepQuestion(step) {
     case 'description':
       return `Give me a brief description of the work involved.\n_Say *skip* to leave blank._`;
     case 'priority':
-      return `What's the priority level?\n\n🔴 *urgent*  ·  🟠 *high*  ·  🟡 *medium*  ·  🟢 *low*\n\n_Say *skip* for medium._`;
+      return `What's the priority level?\n\n🔴 *urgent*  ·  🟠 *high*  ·  🟡 *medium*  ·  🟢 *low*\n\n_Say *skip* to leave unset._`;
     case 'assignees':
       return `Who should be assigned? Name one or more people (e.g. _Dwayne_, _Dwayne and Noah_).\n_Say *nobody* or *skip* to leave unassigned._`;
     case 'lineage':
@@ -205,8 +205,12 @@ async function handleCreationSession(slackUserId, userName, text, say) {
     case 'priority':
       if (!isSkip) {
         const p = parsePriority(t);
-        data.priority = p || 'medium';
-        if (!p && !isSkip) await say(`_I'll set that as medium — didn't quite catch the priority level._`);
+        if (p) {
+          data.priority = p;
+        } else {
+          await say(`_Didn't catch that — say urgent, high, medium, low, or skip._`);
+          return;
+        }
       }
       break;
 
@@ -281,7 +285,7 @@ async function finaliseTask(slackUserId, userName, data, say) {
   const newTask = {
     name:               data.name,
     description:        data.description        || tmpl.description           || '',
-    priority:           data.priority            || tmpl.default_priority      || 'medium',
+    priority:           data.priority            || tmpl.default_priority      || null,
     stage:              tmpl.default_stage                                     || 'assigned',
     assignees:          data.assignees?.length   ? data.assignees : (tmpl.default_assignees || []),
     lineage:            data.lineage             || tmpl.default_lineage       || null,
