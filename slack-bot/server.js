@@ -447,11 +447,13 @@ app.message(async ({ message, say, client }) => {
 async function handleMessage({ text, slackUserId, say, client }) {
   if (!text || !text.trim()) return;
 
-  // ── 1. Get Slack user's real name ──
+  // ── 1. Get Slack user's real name and resolve to known worker ──
   let userName = 'Unknown';
   try {
     const info = await client.users.info({ user: slackUserId });
-    userName = info.user.profile?.real_name || info.user.real_name || info.user.name;
+    // Prefer display_name → real_name → username, in that order
+    const rawName = info.user.profile?.display_name || info.user.profile?.real_name || info.user.real_name || info.user.name;
+    userName = await resolveWorkerName(slackUserId, rawName);
   } catch (e) { console.error('users.info error:', e.message); }
 
   // ── 2. Disambiguation awaiting? Handle it first ──
@@ -1030,6 +1032,92 @@ Signal patterns:
 
   // Fallback
   await say('Not sure what you\'re after — you can update a task, create one, ask about one, or say "undo" to roll something back.');
+}
+
+// ── SLACK NAME → WORKER NAME RESOLVER ───────────────────────
+// Tries to match a Slack display/real name to a known worker in bot_memory.
+// Handles: exact match, prefix match, initials (e.g. "KM" → "Keith Macabenta"),
+// and single-letter abbreviations. Caches the result as an alias in bot_memory.
+async function resolveWorkerName(slackUserId, slackName) {
+  if (!slackName || slackName === 'Unknown') return slackName;
+
+  // Check if we've already cached this resolution
+  const { data: cached } = await sb
+    .from('bot_memory')
+    .select('value')
+    .eq('category', 'alias')
+    .eq('key', `slack:${slackUserId}`)
+    .limit(1);
+  if (cached?.[0]) return cached[0].value;
+
+  // Load all known workers
+  const { data: workers } = await sb
+    .from('bot_memory')
+    .select('key, value')
+    .eq('category', 'worker');
+  if (!workers?.length) return slackName;
+
+  const sl = slackName.toLowerCase().trim();
+  let resolved = null;
+
+  // 1. Exact key match
+  const exact = workers.find(w => w.key === sl);
+  if (exact) resolved = capitalize(exact.key);
+
+  // 2. Slack name starts with a known worker key (e.g. "Keith Macabenta" → "Keith")
+  if (!resolved) {
+    const sw = workers.find(w => sl === w.key || sl.startsWith(w.key + ' '));
+    if (sw) resolved = capitalize(sw.key);
+  }
+
+  // 3. Known worker key starts with the Slack name (e.g. Slack = "keith", key = "keith macabenta")
+  if (!resolved) {
+    const ww = workers.find(w => w.key.startsWith(sl + ' ') || w.key === sl);
+    if (ww) resolved = capitalize(ww.key.split(' ')[0]);
+  }
+
+  // 4. Initials match — e.g. Slack name "KM" matches worker "keith macabenta"
+  //    Checks both the key and the full name extracted from the value field.
+  if (!resolved && /^[A-Z]{1,6}$/i.test(slackName.trim().replace(/\s/g, ''))) {
+    const initials = slackName.trim().replace(/\s/g, '').toUpperCase();
+    for (const w of workers) {
+      // Try key words
+      const keyInitials = w.key.split(/\s+/).map(p => p[0]?.toUpperCase() || '').join('');
+      if (keyInitials === initials) { resolved = capitalize(w.key.split(' ')[0]); break; }
+
+      // Try full name extracted from value ("Keith Macabenta is a team member..." → ["Keith","Macabenta"])
+      const fullNameMatch = w.value.match(/^([^.]+?)\s+is\s/i);
+      if (fullNameMatch) {
+        const valueInitials = fullNameMatch[1].trim().split(/\s+/).map(p => p[0]?.toUpperCase() || '').join('');
+        if (valueInitials === initials) { resolved = fullNameMatch[1].trim().split(' ')[0]; break; }
+      }
+    }
+  }
+
+  // 5. Single letter — match first letter of any worker key
+  if (!resolved && /^[A-Z]$/i.test(slackName.trim())) {
+    const letter = slackName.trim().toLowerCase();
+    const first = workers.find(w => w.key.startsWith(letter));
+    if (first) resolved = capitalize(first.key.split(' ')[0]);
+  }
+
+  if (resolved) {
+    // Cache for next time — saves the lookup on every message
+    await sb.from('bot_memory').upsert(
+      {
+        category: 'alias',
+        key: `slack:${slackUserId}`,
+        value: resolved,
+        source: `auto-resolved from Slack name "${slackName}"`,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'category,key' }
+    );
+    console.log(`Resolved Slack user "${slackName}" → "${resolved}"`);
+    return resolved;
+  }
+
+  return slackName; // no match — use Slack name as-is
 }
 
 // ── WORKER MEMORY ────────────────────────────────────────────
