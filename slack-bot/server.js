@@ -509,7 +509,9 @@ async function handleMessage({ text, slackUserId, say, client }) {
     const info = await client.users.info({ user: slackUserId });
     // Prefer display_name → real_name → username, in that order
     const rawName = info.user.profile?.display_name || info.user.profile?.real_name || info.user.real_name || info.user.name;
+    console.log(`Slack identity: userId=${slackUserId} rawName="${rawName}"`);
     userName = await resolveWorkerName(slackUserId, rawName);
+    console.log(`Resolved userName="${userName}"`);
   } catch (e) { console.error('users.info error:', e.message); }
 
   // ── 2. Disambiguation awaiting? Handle it first ──
@@ -1147,14 +1149,29 @@ async function resolveWorkerName(slackUserId, slackName) {
     .limit(1);
   if (cached?.[0]) return cached[0].value;
 
-  // Load all known workers
-  const { data: workers } = await sb
-    .from('bot_memory')
-    .select('key, value')
-    .eq('category', 'worker');
-  if (!workers?.length) return slackName;
+  // Load workers AND aliases in one call
+  const { data: allMem } = await sb.from('bot_memory').select('key, value, category');
+  const workers = (allMem || []).filter(m => m.category === 'worker');
+  const aliases  = (allMem || []).filter(m => m.category === 'alias');
 
-  const resolved = matchWorkerName(slackName, workers);
+  let resolved = matchWorkerName(slackName, workers);
+
+  // If worker matching failed, check saved aliases (e.g. "km" → "KM is an alias for Keith")
+  if (!resolved) {
+    const aliasEntry = aliases.find(a => a.key === slackName.toLowerCase());
+    if (aliasEntry) {
+      // Find a worker name that appears in the alias value
+      const workerNames = workers.map(w => capitalize(w.key.split(' ')[0]));
+      const hit = workerNames.find(wn => aliasEntry.value.includes(wn));
+      if (hit) {
+        resolved = hit;
+      } else {
+        // Fall back: first capitalized word in the alias value (e.g. "Keith" from "KM is an alias for Keith")
+        const cap = aliasEntry.value.match(/\b([A-Z][a-z]{1,})\b/);
+        if (cap) resolved = cap[1];
+      }
+    }
+  }
 
   if (resolved) {
     // Cache for next time — saves the lookup on every message
