@@ -354,6 +354,35 @@ async function handleMessage({ text, slackUserId, say, client }) {
     return;
   }
 
+  // ── 3. Short-circuit: obvious follow-up on the last task ──
+  const last = recentTask.get(slackUserId);
+  if (last && /^(more info|more info on (that|it|this)|more details|tell me more|details|expand|what about it|show me more|more on that|info on that|more)$/i.test(text.trim())) {
+    // Treat as query_task on the last touched task — no need to call Claude
+    const { data: taskRow } = await sb
+      .from('tasks')
+      .select('id, name, stage, percent_complete, assignees, lineage, priority, description, start_date, due_date, follow_up_date, estimated_hours, location, task_notes')
+      .eq('id', last.id)
+      .single();
+
+    if (taskRow) {
+      const stageLabel = STAGE_LABELS[taskRow.stage] || taskRow.stage;
+      const pri = taskRow.priority || null;
+      const lines = [`*${taskRow.name}*`];
+      lines.push(`> ${pri ? (PRIORITY_EMOJI[pri] + ' ' + pri) : 'No priority'}  ·  ${stageLabel} (${taskRow.percent_complete}%)`);
+      lines.push(`> 👤 ${taskRow.assignees?.join(', ') || 'Nobody assigned'}`);
+      if (taskRow.lineage)         lines.push(`> 🏢 ${taskRow.lineage}`);
+      if (taskRow.due_date)        lines.push(`> 📅 Due ${taskRow.due_date}`);
+      if (taskRow.follow_up_date)  lines.push(`> 🔔 Follow-up ${taskRow.follow_up_date}`);
+      if (taskRow.location)        lines.push(`> 📍 ${taskRow.location}`);
+      if (taskRow.estimated_hours) lines.push(`> ⏱ ${taskRow.estimated_hours}h estimated`);
+      if (taskRow.description)     lines.push(`> _${taskRow.description}_`);
+      await say(lines.join('\n'));
+    } else {
+      await say(`Can't find *${last.name}* — it may have been deleted.`);
+    }
+    return;
+  }
+
   // ── 3. Fetch active tasks ──
   const { data: tasks, error: tasksErr } = await sb
     .from('tasks')
