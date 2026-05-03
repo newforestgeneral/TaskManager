@@ -13,6 +13,16 @@ const app = new App({
   signingSecret: process.env.SLACK_SIGNING_SECRET,
 });
 
+// Ignore Slack retry events — when the bot takes >3 s, Slack resends the
+// event. Without this, the handler runs twice and the user gets double replies.
+app.use(async ({ next, context }) => {
+  if (context.retryNum) {
+    console.log(`Slack retry #${context.retryNum} ignored`);
+    return;
+  }
+  await next();
+});
+
 const sb = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
@@ -129,6 +139,52 @@ function parseDate(text) {
 function capitalize(str) {
   if (!str) return '';
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// Synchronous — matches a name/abbreviation against a pre-fetched workers array.
+// Used by both resolveWorkerName() and the list_tasks filter.
+// Returns the resolved first name (capitalized) or null if no match.
+function matchWorkerName(name, workers) {
+  if (!name || !workers?.length) return null;
+  const nl = name.toLowerCase().trim();
+
+  // 1. Exact key match
+  const exact = workers.find(w => w.key === nl);
+  if (exact) return capitalize(exact.key.split(' ')[0]);
+
+  // 2. Input starts with a key ("Keith Macabenta" → "Keith")
+  const sw = workers.find(w => nl === w.key || nl.startsWith(w.key + ' '));
+  if (sw) return capitalize(sw.key.split(' ')[0]);
+
+  // 3. Key starts with input ("Keith" matches key "keith macabenta")
+  const ww = workers.find(w => w.key.startsWith(nl + ' ') || w.key === nl);
+  if (ww) return capitalize(ww.key.split(' ')[0]);
+
+  // 4. Initials — e.g. "KM" → "Keith Macabenta"
+  //    Checks key words and full name extracted from the value field.
+  if (/^[A-Z]{1,6}$/i.test(name.trim().replace(/\s/g, ''))) {
+    const initials = name.trim().replace(/\s/g, '').toUpperCase();
+    for (const w of workers) {
+      const keyInitials = w.key.split(/\s+/).map(p => p[0]?.toUpperCase() || '').join('');
+      if (keyInitials === initials) return capitalize(w.key.split(' ')[0]);
+
+      const fullNameMatch = w.value.match(/^([^.]+?)\s+is\s/i);
+      if (fullNameMatch) {
+        const valueWords = fullNameMatch[1].trim().split(/\s+/);
+        const valueInitials = valueWords.map(p => p[0]?.toUpperCase() || '').join('');
+        if (valueInitials === initials) return capitalize(valueWords[0]);
+      }
+    }
+  }
+
+  // 5. Single letter — first worker whose name starts with that letter
+  if (/^[A-Z]$/i.test(name.trim())) {
+    const letter = name.trim().toLowerCase();
+    const first = workers.find(w => w.key.startsWith(letter));
+    if (first) return capitalize(first.key.split(' ')[0]);
+  }
+
+  return null;
 }
 
 // Score tasks by how many words from the message appear in the task name.
@@ -723,8 +779,15 @@ Signal patterns:
   if (parsed.intent === 'list_tasks') {
     let filtered = tasks || [];
 
-    // Resolve "me" to the actual user's name
-    const assigneeFilter = parsed.filter_assignee === 'me' ? userName : parsed.filter_assignee;
+    // Resolve the assignee filter:
+    // "me" → resolved Slack user name
+    // initials/abbreviations (e.g. "KM") → look up in bot_memory workers
+    let assigneeFilter = parsed.filter_assignee === 'me' ? userName : parsed.filter_assignee;
+    if (assigneeFilter && assigneeFilter !== userName) {
+      const { data: wMem } = await sb.from('bot_memory').select('key, value').eq('category', 'worker');
+      const resolved = matchWorkerName(assigneeFilter, wMem || []);
+      if (resolved) assigneeFilter = resolved;
+    }
 
     if (assigneeFilter) {
       filtered = filtered.filter(t =>
@@ -1057,49 +1120,7 @@ async function resolveWorkerName(slackUserId, slackName) {
     .eq('category', 'worker');
   if (!workers?.length) return slackName;
 
-  const sl = slackName.toLowerCase().trim();
-  let resolved = null;
-
-  // 1. Exact key match
-  const exact = workers.find(w => w.key === sl);
-  if (exact) resolved = capitalize(exact.key);
-
-  // 2. Slack name starts with a known worker key (e.g. "Keith Macabenta" → "Keith")
-  if (!resolved) {
-    const sw = workers.find(w => sl === w.key || sl.startsWith(w.key + ' '));
-    if (sw) resolved = capitalize(sw.key);
-  }
-
-  // 3. Known worker key starts with the Slack name (e.g. Slack = "keith", key = "keith macabenta")
-  if (!resolved) {
-    const ww = workers.find(w => w.key.startsWith(sl + ' ') || w.key === sl);
-    if (ww) resolved = capitalize(ww.key.split(' ')[0]);
-  }
-
-  // 4. Initials match — e.g. Slack name "KM" matches worker "keith macabenta"
-  //    Checks both the key and the full name extracted from the value field.
-  if (!resolved && /^[A-Z]{1,6}$/i.test(slackName.trim().replace(/\s/g, ''))) {
-    const initials = slackName.trim().replace(/\s/g, '').toUpperCase();
-    for (const w of workers) {
-      // Try key words
-      const keyInitials = w.key.split(/\s+/).map(p => p[0]?.toUpperCase() || '').join('');
-      if (keyInitials === initials) { resolved = capitalize(w.key.split(' ')[0]); break; }
-
-      // Try full name extracted from value ("Keith Macabenta is a team member..." → ["Keith","Macabenta"])
-      const fullNameMatch = w.value.match(/^([^.]+?)\s+is\s/i);
-      if (fullNameMatch) {
-        const valueInitials = fullNameMatch[1].trim().split(/\s+/).map(p => p[0]?.toUpperCase() || '').join('');
-        if (valueInitials === initials) { resolved = fullNameMatch[1].trim().split(' ')[0]; break; }
-      }
-    }
-  }
-
-  // 5. Single letter — match first letter of any worker key
-  if (!resolved && /^[A-Z]$/i.test(slackName.trim())) {
-    const letter = slackName.trim().toLowerCase();
-    const first = workers.find(w => w.key.startsWith(letter));
-    if (first) resolved = capitalize(first.key.split(' ')[0]);
-  }
+  const resolved = matchWorkerName(slackName, workers);
 
   if (resolved) {
     // Cache for next time — saves the lookup on every message
