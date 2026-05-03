@@ -24,6 +24,7 @@ const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentTask      = new Map(); // slackUserId → { id, name }
 const recentList      = new Map(); // slackUserId → [{ id, name }, ...] — last list shown
 const creationSession = new Map(); // slackUserId → { step, data }
+const disambigSession = new Map(); // slackUserId → { options:[{label,value}], onResolve }
 
 // ── CONSTANTS ────────────────────────────────────────────────
 const LINEAGES = [
@@ -125,6 +126,28 @@ function parseDate(text) {
   return null; // couldn't parse
 }
 
+function capitalize(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// Score tasks by how many words from the message appear in the task name.
+// Returns up to `limit` best matches.
+function findCandidateTasks(text, tasks, limit = 4) {
+  const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  if (!words.length) return [];
+  return tasks
+    .map(t => {
+      const name = t.name.toLowerCase();
+      const score = words.reduce((s, w) => s + (name.includes(w) ? 1 : 0), 0);
+      return { task: t, score };
+    })
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(x => x.task);
+}
+
 function stepQuestion(step) {
   switch (step) {
     case 'name':
@@ -158,6 +181,40 @@ function buildSummary(data) {
   return lines.join('\n');
 }
 
+// ── DISAMBIGUATION HANDLER ───────────────────────────────────
+// Called when a numbered-choice prompt is awaiting user input.
+async function handleDisambig(slackUserId, text, say) {
+  const session = disambigSession.get(slackUserId);
+  const t = text.trim();
+
+  if (/^(cancel|stop|quit|nevermind|forget it)/i.test(t)) {
+    disambigSession.delete(slackUserId);
+    await say('No worries — cancelled. 👍');
+    return;
+  }
+
+  // Try numeric selection first
+  const num = parseInt(t);
+  if (!isNaN(num) && num >= 1 && num <= session.options.length) {
+    const chosen = session.options[num - 1];
+    disambigSession.delete(slackUserId);
+    await session.onResolve(chosen.value, say);
+    return;
+  }
+
+  // Try matching by typed text (e.g. user types "Keith" instead of "1")
+  const textMatch = session.options.find(o => o.label.toLowerCase().startsWith(t.toLowerCase()));
+  if (textMatch) {
+    disambigSession.delete(slackUserId);
+    await session.onResolve(textMatch.value, say);
+    return;
+  }
+
+  // Didn't understand — re-prompt
+  const list = session.options.map((o, i) => `${i + 1}. ${o.label}`).join('\n');
+  await say(`Type the number of your choice:\n${list}`);
+}
+
 // ── WIZARD SESSION HANDLER ───────────────────────────────────
 async function handleCreationSession(slackUserId, userName, text, say) {
   const session = creationSession.get(slackUserId);
@@ -182,7 +239,7 @@ async function handleCreationSession(slackUserId, userName, text, say) {
 
   // ── Confirm step ──
   if (step === 'confirm') {
-    if (/^(confirm|yes|create|do it|go ahead|ok|yep|yeah|looks good|good|correct|right)/i.test(t)) {
+    if (/^(confirm|yes|create|do it|go ahead|ok|okay|yep|yeah|yup|looks good|good|correct|right|sure|sounds good|perfect|great)/i.test(t) || /^y$/i.test(t)) {
       await finaliseTask(slackUserId, userName, data, say);
     } else {
       await say('*confirm* to create it or *cancel* to start over.');
@@ -213,11 +270,57 @@ async function handleCreationSession(slackUserId, userName, text, say) {
       }
       break;
 
-    case 'assignees':
+    case 'assignees': {
       if (!isSkip) {
-        data.assignees = t.split(/\s*(?:,|and|&)\s*/i).map(n => n.trim()).filter(Boolean);
+        const parts = t.split(/\s*(?:,|and|&)\s*/i).map(n => n.trim()).filter(Boolean);
+
+        // Look up known workers in bot_memory to catch partial/ambiguous names
+        const { data: workers } = await sb.from('bot_memory').select('key').eq('category', 'worker');
+        const workerKeys = (workers || []).map(w => w.key);
+
+        const resolved = [];
+        let ambiguousPart = null;
+        let ambiguousMatches = [];
+
+        for (const part of parts) {
+          const pl = part.toLowerCase().trim();
+          if (!pl) continue;
+          const exact = workerKeys.find(k => k === pl);
+          if (exact) { resolved.push(capitalize(exact)); continue; }
+          const partials = workerKeys.filter(k => k.startsWith(pl));
+          if (partials.length === 1) {
+            resolved.push(capitalize(partials[0]));
+          } else if (partials.length > 1) {
+            ambiguousPart = part;
+            ambiguousMatches = partials;
+            break; // handle one ambiguity at a time
+          } else {
+            resolved.push(part); // unknown name — store as typed
+          }
+        }
+
+        if (ambiguousPart) {
+          // Pause the wizard and ask for clarification
+          const capturedSession = session;
+          disambigSession.set(slackUserId, {
+            options: ambiguousMatches.map(k => ({ label: capitalize(k), value: capitalize(k) })),
+            onResolve: async (chosenName, say) => {
+              capturedSession.data.assignees = [...resolved, chosenName];
+              const nextIdx = WIZARD_STEPS.indexOf('assignees') + 1;
+              const nextStep = WIZARD_STEPS[nextIdx];
+              capturedSession.step = nextStep || 'confirm';
+              await say(nextStep ? stepQuestion(nextStep) : buildSummary(capturedSession.data));
+            }
+          });
+          const list = ambiguousMatches.map((k, i) => `${i + 1}. ${capitalize(k)}`).join('\n');
+          await say(`Who did you mean?\n${list}\n_Type the number._`);
+          return;
+        }
+
+        data.assignees = resolved;
       }
       break;
+    }
 
     case 'lineage':
       if (!isSkip) {
@@ -351,7 +454,13 @@ async function handleMessage({ text, slackUserId, say, client }) {
     userName = info.user.profile?.real_name || info.user.real_name || info.user.name;
   } catch (e) { console.error('users.info error:', e.message); }
 
-  // ── 2. Active creation wizard? Handle it directly ──
+  // ── 2. Disambiguation awaiting? Handle it first ──
+  if (disambigSession.has(slackUserId)) {
+    await handleDisambig(slackUserId, text, say);
+    return;
+  }
+
+  // ── 3. Active creation wizard? Handle it directly ──
   if (creationSession.has(slackUserId)) {
     await handleCreationSession(slackUserId, userName, text, say);
     return;
@@ -663,6 +772,28 @@ Signal patterns:
       return;
     }
 
+    if (parsed.confidence === 'low') {
+      const candidates = findCandidateTasks(text, tasks);
+      const matched = (tasks || []).find(t => t.id === parsed.matched_task_id);
+      const options = matched
+        ? [matched, ...candidates.filter(t => t.id !== matched.id)].slice(0, 4)
+        : candidates.slice(0, 4);
+
+      if (options.length > 1) {
+        disambigSession.set(slackUserId, {
+          options: options.map(t => ({ label: t.name, value: t.id })),
+          onResolve: async (chosenId, say) => {
+            const chosen = options.find(t => t.id === chosenId);
+            recentTask.set(slackUserId, { id: chosenId, name: chosen?.name || chosenId });
+            await say(`Got it — ask me anything about *${chosen?.name}*.`);
+          }
+        });
+        const list = options.map((t, i) => `${i + 1}. ${t.name}`).join('\n');
+        await say(`Which task?\n${list}\n_Type the number._`);
+        return;
+      }
+    }
+
     const task = (tasks || []).find(t => t.id === parsed.matched_task_id);
     if (!task) {
       await say('Not showing up in the active list — might already be done.');
@@ -695,6 +826,29 @@ Signal patterns:
     if (!parsed.matched_task_id) {
       await say('Can\'t match that to anything active — which task are you referring to?');
       return;
+    }
+
+    // Low confidence — present candidates and let the user confirm
+    if (parsed.confidence === 'low') {
+      const candidates = findCandidateTasks(text, tasks);
+      const matched = (tasks || []).find(t => t.id === parsed.matched_task_id);
+      const options = matched
+        ? [matched, ...candidates.filter(t => t.id !== matched.id)].slice(0, 4)
+        : candidates.slice(0, 4);
+
+      if (options.length > 1) {
+        disambigSession.set(slackUserId, {
+          options: options.map(t => ({ label: t.name, value: t.id })),
+          onResolve: async (chosenId, say) => {
+            const chosen = options.find(t => t.id === chosenId);
+            recentTask.set(slackUserId, { id: chosenId, name: chosen?.name || chosenId });
+            await say(`Got it — *${chosen?.name}* is in focus. Go ahead with your update.`);
+          }
+        });
+        const list = options.map((t, i) => `${i + 1}. ${t.name}`).join('\n');
+        await say(`Which task?\n${list}\n_Type the number._`);
+        return;
+      }
     }
 
     const task = (tasks || []).find(t => t.id === parsed.matched_task_id);
@@ -798,6 +952,28 @@ Signal patterns:
     if (!parsed.matched_task_id) {
       await say('Which task are we reverting?');
       return;
+    }
+
+    if (parsed.confidence === 'low') {
+      const candidates = findCandidateTasks(text, tasks);
+      const matched = (tasks || []).find(t => t.id === parsed.matched_task_id);
+      const options = matched
+        ? [matched, ...candidates.filter(t => t.id !== matched.id)].slice(0, 4)
+        : candidates.slice(0, 4);
+
+      if (options.length > 1) {
+        disambigSession.set(slackUserId, {
+          options: options.map(t => ({ label: t.name, value: t.id })),
+          onResolve: async (chosenId, say) => {
+            const chosen = options.find(t => t.id === chosenId);
+            recentTask.set(slackUserId, { id: chosenId, name: chosen?.name || chosenId });
+            await say(`Got it — say "undo that" again and I'll revert *${chosen?.name}*.`);
+          }
+        });
+        const list = options.map((t, i) => `${i + 1}. ${t.name}`).join('\n');
+        await say(`Which task are we reverting?\n${list}\n_Type the number._`);
+        return;
+      }
     }
 
     const task = (tasks || []).find(t => t.id === parsed.matched_task_id);
