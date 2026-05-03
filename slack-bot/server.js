@@ -22,6 +22,7 @@ const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── SESSION STATE (resets on server restart) ─────────────────
 const recentTask      = new Map(); // slackUserId → { id, name }
+const recentList      = new Map(); // slackUserId → [{ id, name }, ...] — last list shown
 const creationSession = new Map(); // slackUserId → { step, data }
 
 // ── CONSTANTS ────────────────────────────────────────────────
@@ -371,9 +372,14 @@ async function handleMessage({ text, slackUserId, say, client }) {
   ).join('\n');
 
   const lastTouched = recentTask.get(slackUserId);
-  const recentContext = lastTouched
-    ? `\nMost recently created/updated task by this user: ID: ${lastTouched.id} | "${lastTouched.name}"`
-    : '';
+  const lastList = recentList.get(slackUserId);
+
+  const recentContext = [
+    lastTouched ? `Most recently created/updated task by this user: ID: ${lastTouched.id} | "${lastTouched.name}"` : '',
+    lastList?.length > 1
+      ? `Tasks just listed to this user:\n${lastList.map(t => `  ID: ${t.id} | "${t.name}"`).join('\n')}`
+      : '',
+  ].filter(Boolean).join('\n');
 
   // ── 4. Fetch bot memory ──
   const { data: memories } = await sb
@@ -529,7 +535,9 @@ Signal patterns:
 - "create", "new task", "add a task", "need to log", "can you add" → create_task
 - A message with no matching active task that describes new work → create_task
 - If task name is mentioned: ALWAYS attempt a match, never return unclear
-- If the most recently touched task exists: use it for any vague reference
+- If the most recently touched task exists: use it for vague references like "that", "it", "that one", "more info on that"
+- If a list of tasks was just shown and the user says "more info on that" or similar, and there is only one task in the recently listed tasks — use that task for query_task
+- If multiple tasks were listed and the user says "more info on that" without specifying — use query_task with the first/most obvious match from the recently listed tasks
 - NEVER use intent: unclear if you can make a reasonable guess`
       }]
     });
@@ -589,6 +597,14 @@ Signal patterns:
       await say(`No active tasks found${who}.`);
       await saveMemories(parsed.new_memories, text);
       return;
+    }
+
+    // Store list context so follow-up messages can reference it
+    recentList.set(slackUserId, filtered.map(t => ({ id: t.id, name: t.name })));
+
+    // If only one result, set it as the recent task too — makes "more info on that" work
+    if (filtered.length === 1) {
+      recentTask.set(slackUserId, { id: filtered[0].id, name: filtered[0].name });
     }
 
     const who = assigneeFilter ? ` assigned to *${assigneeFilter}*` : '';
