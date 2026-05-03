@@ -729,6 +729,7 @@ Signal patterns:
 - "add X", "assign X", "put X on it" → add_assignees
 - "take X off", "remove X", "unassign X" → remove_assignees
 - "show me all tasks", "list tasks", "what's assigned to X", "X's tasks", "show me X's tasks", "tasks for X", "what am I working on", "my tasks", "what tasks are in progress/urgent/etc" → list_tasks
+- If the filter name matches the sender's own name or is their likely initials/abbreviation, use filter_assignee: "me" rather than the literal string
 - "tell me about", "what's happening with", "how's X going", "update on X", "info on" → query_task (single task)
 - "undo", "go back", "revert", "roll back", "that was wrong" → revert
 - "create", "new task", "add a task", "need to log", "can you add" → create_task
@@ -779,14 +780,47 @@ Signal patterns:
   if (parsed.intent === 'list_tasks') {
     let filtered = tasks || [];
 
-    // Resolve the assignee filter:
-    // "me" → resolved Slack user name
-    // initials/abbreviations (e.g. "KM") → look up in bot_memory workers
+    // Resolve the assignee filter — handles "me", initials, abbreviations, aliases.
     let assigneeFilter = parsed.filter_assignee === 'me' ? userName : parsed.filter_assignee;
+
     if (assigneeFilter && assigneeFilter !== userName) {
-      const { data: wMem } = await sb.from('bot_memory').select('key, value').eq('category', 'worker');
-      const resolved = matchWorkerName(assigneeFilter, wMem || []);
-      if (resolved) assigneeFilter = resolved;
+      // Fetch workers + aliases in one call
+      const { data: allMem } = await sb.from('bot_memory').select('key, value, category');
+      const workers = (allMem || []).filter(m => m.category === 'worker');
+      const aliases  = (allMem || []).filter(m => m.category === 'alias');
+
+      // 1. Try worker key / initials match
+      const workerMatch = matchWorkerName(assigneeFilter, workers);
+      if (workerMatch) {
+        assigneeFilter = workerMatch;
+      } else {
+        // 2. Try saved aliases (e.g. Claude stored "km" → "KM refers to Keith")
+        const aliasEntry = aliases.find(a => a.key === assigneeFilter.toLowerCase());
+        if (aliasEntry) {
+          // Pull the first known worker name that appears in the alias value
+          const workerNames = workers.map(w => capitalize(w.key.split(' ')[0]));
+          const hit = workerNames.find(wn => aliasEntry.value.includes(wn));
+          if (hit) {
+            assigneeFilter = hit;
+          } else {
+            // Fall back: first capitalized word in the alias value
+            const cap = aliasEntry.value.match(/\b([A-Z][a-z]{1,})\b/);
+            if (cap) assigneeFilter = cap[1];
+          }
+        } else {
+          // 3. Check if the filter matches the sending user's own initials/prefix
+          //    e.g. KM is Keith and types "KM tasks" — resolve to themselves
+          const userWords = userName.split(/\s+/);
+          const userInitials = userWords.map(w => w[0]?.toUpperCase() || '').join('');
+          const filterUpper  = assigneeFilter.toUpperCase();
+          if (
+            filterUpper === userInitials ||
+            userName.toLowerCase().startsWith(assigneeFilter.toLowerCase())
+          ) {
+            assigneeFilter = userName;
+          }
+        }
+      }
     }
 
     if (assigneeFilter) {
