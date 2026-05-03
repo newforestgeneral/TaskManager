@@ -127,35 +127,33 @@ function parseDate(text) {
 function stepQuestion(step) {
   switch (step) {
     case 'name':
-      return `What's the task name?\n_At any point say *skip all* to jump straight to the summary, or *cancel* to abort._`;
+      return `What's the task name? _(*skip all* to jump to summary, *cancel* to quit)_`;
     case 'description':
-      return `Give me a brief description of the work involved.\n_Say *skip* to leave blank._`;
-    case 'priority':
-      return `What's the priority level?\n\n🔴 *urgent*  ·  🟠 *high*  ·  🟡 *medium*  ·  🟢 *low*\n\n_Say *skip* to leave unset._`;
+      return `Brief description of the work? _(*skip* to leave blank)_`;
     case 'assignees':
-      return `Who should be assigned? Name one or more people (e.g. _Dwayne_, _Dwayne and Noah_).\n_Say *nobody* or *skip* to leave unassigned._`;
-    case 'lineage':
-      return `Which department does this belong to?\n\n> ${LINEAGES.join('  ·  ')}\n\n_Say *skip* if unsure._`;
+      return `Who's on this one? _(e.g. Dwayne, Dwayne and Noah — or *skip*)_`;
     case 'location':
-      return `Any specific location on the property?\n_Say *skip* to leave blank._`;
+      return `Where on the property? _(*skip* if not specific)_`;
+    case 'priority':
+      return `Priority — 🔴 *urgent* · 🟠 *high* · 🟡 *medium* · 🟢 *low* _(*skip* to leave unset)_`;
+    case 'lineage':
+      return `Department?\n> ${LINEAGES.join('  ·  ')}\n_(*skip* if unsure)_`;
     case 'due_date':
-      return `When is this due? (e.g. _May 15_, _next Friday_, _2026-05-20_)\n_Say *skip* if no deadline yet._`;
+      return `Due date? _(May 15, next Friday, 2026-05-20 — or *skip*)_`;
   }
 }
 
 function buildSummary(data) {
-  const pri = data.priority || 'medium';
-  const emoji = PRIORITY_EMOJI[pri] || '🟡';
-  const lines = [
-    `Here's a summary of your new task — let me know if anything looks wrong:\n`,
-    `📋 *${data.name}*`,
-  ];
-  if (data.description)           lines.push(`> 📝 ${data.description}`);
-  lines.push(`> ${emoji} Priority: *${pri}*${data.lineage ? `  ·  🏢 Department: *${data.lineage}*` : ''}`);
-  lines.push(`> 👤 Assigned to: *${data.assignees?.length ? data.assignees.join(', ') : 'Nobody'}*`);
-  if (data.location)              lines.push(`> 📍 Location: ${data.location}`);
-  if (data.due_date)              lines.push(`> 📅 Due: ${data.due_date}`);
-  lines.push(`\nType *confirm* to create it, *cancel* to start over, or correct anything by restarting.`);
+  const pri = data.priority;
+  const emoji = pri ? (PRIORITY_EMOJI[pri] || '⚪') : '⚪';
+  const lines = [`Here's what I've got — look right?\n`, `📋 *${data.name}*`];
+  if (data.description)              lines.push(`> 📝 ${data.description}`);
+  if (pri)                           lines.push(`> ${emoji} ${pri}${data.lineage ? `  ·  🏢 ${data.lineage}` : ''}`);
+  else if (data.lineage)             lines.push(`> 🏢 ${data.lineage}`);
+  lines.push(`> 👤 ${data.assignees?.length ? data.assignees.join(', ') : 'Nobody assigned'}`);
+  if (data.location)                 lines.push(`> 📍 ${data.location}`);
+  if (data.due_date)                 lines.push(`> 📅 Due ${data.due_date}`);
+  lines.push(`\n*confirm* to create · *cancel* to scrap it`);
   return lines.join('\n');
 }
 
@@ -167,7 +165,7 @@ async function handleCreationSession(slackUserId, userName, text, say) {
   // Cancel at any point
   if (/^(cancel|stop|quit|abort|never mind|forget it)/i.test(t)) {
     creationSession.delete(slackUserId);
-    await say('No problem — task creation cancelled. 👍');
+    await say('Scrapped. 👍');
     return;
   }
 
@@ -183,10 +181,10 @@ async function handleCreationSession(slackUserId, userName, text, say) {
 
   // ── Confirm step ──
   if (step === 'confirm') {
-    if (/^(confirm|yes|create|do it|go ahead|ok|yep|yeah)/i.test(t)) {
+    if (/^(confirm|yes|create|do it|go ahead|ok|yep|yeah|looks good|good|correct|right)/i.test(t)) {
       await finaliseTask(slackUserId, userName, data, say);
     } else {
-      await say('Type *confirm* to create the task, or *cancel* to start over.');
+      await say('*confirm* to create it or *cancel* to start over.');
     }
     return;
   }
@@ -194,7 +192,7 @@ async function handleCreationSession(slackUserId, userName, text, say) {
   // ── Process current step ──
   switch (step) {
     case 'name':
-      if (!t || isSkip) { await say('A task name is required. What would you like to call this task?'); return; }
+      if (!t || isSkip) { await say('Need a name for this one — what should I call it?'); return; }
       data.name = t;
       break;
 
@@ -208,7 +206,7 @@ async function handleCreationSession(slackUserId, userName, text, say) {
         if (p) {
           data.priority = p;
         } else {
-          await say(`_Didn't catch that — say urgent, high, medium, low, or skip._`);
+          await say(`Didn't catch that — urgent, high, medium, low, or skip?`);
           return;
         }
       }
@@ -224,7 +222,7 @@ async function handleCreationSession(slackUserId, userName, text, say) {
       if (!isSkip) {
         const l = parseLineage(t);
         data.lineage = l || t; // store as-is if we can't match — Claude may have been smarter
-        if (!l) await say(`_Couldn't match that exactly — I'll store it as "${t}"._`);
+        if (!l) await say(`Storing it as "${t}" — you can update it in the app if needed.`);
       }
       break;
 
@@ -236,7 +234,7 @@ async function handleCreationSession(slackUserId, userName, text, say) {
       if (!isSkip) {
         const d = parseDate(t);
         data.due_date = d;
-        if (!d && !isSkip) await say(`_Couldn't parse that date — I'll leave the due date blank._`);
+        if (!d && !isSkip) await say(`Couldn't read that date — leaving it blank, you can add it in the app.`);
       }
       break;
   }
@@ -263,12 +261,9 @@ async function startWizard(slackUserId, say, prefill = {}) {
   if (prefill.name) {
     const session = creationSession.get(slackUserId);
     session.step = 'description';
-    await say(
-      `Sure! Let's set up a new task. 📋\n\nI've got the name as *${prefill.name}*.\n\n` +
-      stepQuestion('description')
-    );
+    await say(`Got it — new task: *${prefill.name}*\n\n${stepQuestion('description')}`);
   } else {
-    await say(`Sure! Let's set up a new task. 📋\n\n${stepQuestion('name', 1)}`);
+    await say(`New task — let's go. 📋\n\n${stepQuestion('name')}`);
   }
 }
 
@@ -307,7 +302,7 @@ async function finaliseTask(slackUserId, userName, data, say) {
 
   if (createErr) {
     console.error('task create error:', createErr);
-    await say('Something went wrong creating the task. Check Render logs.');
+    await say('Hit an error saving that — check Render logs.');
     creationSession.delete(slackUserId);
     return;
   }
@@ -331,7 +326,7 @@ async function finaliseTask(slackUserId, userName, data, say) {
   if (data.assignees?.length) details.push(`👤 ${data.assignees.join(', ')}`);
   if (data.due_date)        details.push(`📅 ${data.due_date}`);
 
-  let confirm = `✅ Task created: *${data.name}* — ${nowLabel()}`;
+  let confirm = `✅ *${data.name}* created — ${nowLabel()}`;
   if (details.length) confirm += `\n> ${details.join('  ·  ')}`;
   await say(confirm);
 }
@@ -367,7 +362,7 @@ async function handleMessage({ text, slackUserId, say, client }) {
 
   if (tasksErr) {
     console.error('Supabase fetch error:', tasksErr);
-    await say('Sorry, I couldn\'t load the task list right now. Try again in a moment.');
+    await say('Can\'t reach the database right now — give it a second and try again.');
     return;
   }
 
@@ -497,19 +492,30 @@ MEMORY EXTRACTION
 Add genuinely useful facts to new_memories. Leave empty if nothing new.
 "new_memories": [{ "category": "alias|location|worker|lineage|correction|general", "key": "lowercase term", "value": "fact to remember" }]
 
-Rules:
-- "create", "new task", "add task", "need to add" → intent: create_task
-- Match existing tasks generously — workers use shorthand
-- "done"/"finished" → stage: complete, percent_complete: 100
-- "started"/"working on" → stage: inprogress
-- "ready for check" → stage: review
-- "halfway" → 50, "nearly done" → 90
-- "assign to X"/"add X" → add_assignees; "remove X" → remove_assignees
-- "tell me about"/"info on"/"details on"/"status of" → query_task
-- "undo"/"revert"/"roll back" → revert
-- If message uses "that"/"it" without a task name, use the most recently touched task
-- If a task name or reference is mentioned, NEVER use intent: unclear — always attempt a match
-- NEVER ask the user to repeat info they already gave`
+Before choosing an intent, think about what the person is actually trying to do.
+People message casually and imprecisely. Read the meaning, not just the words.
+
+Thinking process (do this internally):
+1. Is there a task name or description in the message? If yes, which active task is closest?
+2. What action are they trying to take? Update, create, ask, undo?
+3. If they used "it", "that", "the one" etc — they mean the most recently touched task.
+4. If the message is vague but plausible — pick the most likely interpretation and go with it.
+5. Only ask for clarification if you genuinely have no idea what they mean AND the most recently touched task doesn't help.
+
+Signal patterns:
+- "done", "finished", "all done", "wrapped up", "sorted" → stage: complete, percent: 100
+- "started", "on it", "working on it", "underway", "begun" → stage: inprogress
+- "ready for you", "ready for check", "check this" → stage: review
+- "halfway", "half done" → 50 · "nearly done", "almost there" → 90
+- "add X", "assign X", "put X on it" → add_assignees
+- "take X off", "remove X", "unassign X" → remove_assignees
+- "tell me about", "what's happening with", "how's X going", "update on X", "info on" → query_task
+- "undo", "go back", "revert", "roll back", "that was wrong" → revert
+- "create", "new task", "add a task", "need to log", "can you add" → create_task
+- A message with no matching active task that describes new work → create_task
+- If task name is mentioned: ALWAYS attempt a match, never return unclear
+- If the most recently touched task exists: use it for any vague reference
+- NEVER use intent: unclear if you can make a reasonable guess`
       }]
     });
 
@@ -519,12 +525,12 @@ Rules:
     parsed = JSON.parse(rawResponse);
   } catch (e) {
     console.error('Claude/parse error:', e.message, rawResponse);
-    await say('Sorry, I had trouble processing that. Check Render logs for details.');
+    await say('Something went wrong on my end — check Render logs.');
     return;
   }
 
   if (parsed.needs_clarification) {
-    await say(parsed.clarification_question || 'Could you clarify that a bit more?');
+    await say(parsed.clarification_question || 'Can you say that a different way — didn\'t quite get it.');
     return;
   }
 
@@ -550,13 +556,13 @@ Rules:
   // ── 6B. QUERY TASK ───────────────────────────────────────────
   if (parsed.intent === 'query_task') {
     if (!parsed.matched_task_id) {
-      await say('I couldn\'t find that task. Could you give me the task name?');
+      await say('Can\'t place that one — what\'s the task name?');
       return;
     }
 
     const task = (tasks || []).find(t => t.id === parsed.matched_task_id);
     if (!task) {
-      await say('That task doesn\'t appear to be active. It may already be complete.');
+      await say('Not showing up in the active list — might already be done.');
       return;
     }
 
@@ -584,7 +590,7 @@ Rules:
   // ── 6C. UPDATE TASK ──────────────────────────────────────────
   if (parsed.intent === 'update_task') {
     if (!parsed.matched_task_id) {
-      await say('I couldn\'t match that to any active task. Could you mention the task name?');
+      await say('Can\'t match that to anything active — which task are you referring to?');
       return;
     }
 
@@ -655,7 +661,7 @@ Rules:
       const { error: taskErr } = await sb.from('tasks').update(dbUpdate).eq('id', parsed.matched_task_id);
       if (taskErr) {
         console.error('task update error:', taskErr);
-        await say(`Couldn't save changes to *${taskName}*. Check Render logs.`);
+        await say(`Something went wrong saving *${taskName}* — check Render logs.`);
         return;
       }
     }
@@ -677,7 +683,7 @@ Rules:
     const confidenceNote = parsed.confidence === 'low' ? ' _(low confidence)_' : '';
     let confirm = `✅ *${fc.name || taskName}* updated — ${nowLabel()}${confidenceNote}`;
     if (changeLines.length) confirm += `\n> ${changeLines.join('  ·  ')}`;
-    confirm += `\n_Say "undo that" to revert._`;
+    confirm += `\n_"undo that" to roll it back_`;
     await say(confirm);
     await saveMemories(parsed.new_memories, text);
     return;
@@ -686,7 +692,7 @@ Rules:
   // ── 6D. REVERT ───────────────────────────────────────────────
   if (parsed.intent === 'revert') {
     if (!parsed.matched_task_id) {
-      await say('Which task should I revert? Could you mention the task name?');
+      await say('Which task are we reverting?');
       return;
     }
 
@@ -702,14 +708,14 @@ Rules:
       .limit(1);
 
     if (logsErr || !logs?.length) {
-      await say(`No recent bot changes found for *${taskName}* to revert.`);
+      await say(`No bot changes on record for *${taskName}* — nothing to revert.`);
       return;
     }
 
     const lastEntry = logs[0];
     const snapshot  = decodeSnap(lastEntry.text);
     if (!snapshot) {
-      await say(`Found a recent bot entry for *${taskName}* but it has no revert data.`);
+      await say(`Found the log entry for *${taskName}* but there's no snapshot to restore from.`);
       return;
     }
 
@@ -725,7 +731,7 @@ Rules:
     const { error: revertErr } = await sb.from('tasks').update(revertData).eq('id', parsed.matched_task_id);
     if (revertErr) {
       console.error('revert error:', revertErr);
-      await say(`Couldn't revert *${taskName}*. Check Render logs.`);
+      await say(`Hit an error reverting *${taskName}* — check Render logs.`);
       return;
     }
 
@@ -737,13 +743,13 @@ Rules:
       via:     'Slack Bot',
     });
 
-    await say(`↩️ *${taskName}* reverted to state before changes made at ${changedAt} on ${changedDate}.`);
+    await say(`↩️ *${taskName}* rolled back to how it was at ${changedAt} on ${changedDate}.`);
     await saveMemories(parsed.new_memories, text);
     return;
   }
 
   // Fallback
-  await say('Not sure what you\'d like — you can update a task, create a new one, ask for task details, or say "undo" to revert a change.');
+  await say('Not sure what you\'re after — you can update a task, create one, ask about one, or say "undo" to roll something back.');
 }
 
 // ── MEMORY SAVE ──────────────────────────────────────────────
