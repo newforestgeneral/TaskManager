@@ -459,11 +459,25 @@ When the message is a progress report or field change on an existing task.
 
 ────────────────────────────────
 INTENT: query_task
-When asking for info or status on a task.
+When asking for info or status on ONE specific task.
 {
   "intent": "query_task",
   "matched_task_id": "uuid or null",
   "confidence": "high|low",
+  "new_memories": []
+}
+
+────────────────────────────────
+INTENT: list_tasks
+When asking for a list of tasks — filtered by assignee, stage, department, priority, or "all".
+Examples: "show me all tasks", "what's assigned to Dwayne", "show me Keith's tasks",
+          "show me all tasks assigned to me", "what tasks are in progress", "anything urgent".
+{
+  "intent": "list_tasks",
+  "filter_assignee": "name or 'me' if referring to themselves, or null for no filter",
+  "filter_stage": "assigned|inprogress|review|complete or null",
+  "filter_lineage": "lineage name or null",
+  "filter_priority": "low|medium|high|urgent or null",
   "new_memories": []
 }
 
@@ -509,7 +523,8 @@ Signal patterns:
 - "halfway", "half done" → 50 · "nearly done", "almost there" → 90
 - "add X", "assign X", "put X on it" → add_assignees
 - "take X off", "remove X", "unassign X" → remove_assignees
-- "tell me about", "what's happening with", "how's X going", "update on X", "info on" → query_task
+- "show me all tasks", "list tasks", "what's assigned to X", "X's tasks", "show me X's tasks", "tasks for X", "what am I working on", "my tasks", "what tasks are in progress/urgent/etc" → list_tasks
+- "tell me about", "what's happening with", "how's X going", "update on X", "info on" → query_task (single task)
 - "undo", "go back", "revert", "roll back", "that was wrong" → revert
 - "create", "new task", "add a task", "need to log", "can you add" → create_task
 - A message with no matching active task that describes new work → create_task
@@ -553,7 +568,47 @@ Signal patterns:
 
   const today = todayISO();
 
-  // ── 6B. QUERY TASK ───────────────────────────────────────────
+  // ── 6B. LIST TASKS ──────────────────────────────────────────
+  if (parsed.intent === 'list_tasks') {
+    let filtered = tasks || [];
+
+    // Resolve "me" to the actual user's name
+    const assigneeFilter = parsed.filter_assignee === 'me' ? userName : parsed.filter_assignee;
+
+    if (assigneeFilter) {
+      filtered = filtered.filter(t =>
+        (t.assignees || []).some(a => a.toLowerCase().includes(assigneeFilter.toLowerCase()))
+      );
+    }
+    if (parsed.filter_stage)    filtered = filtered.filter(t => t.stage === parsed.filter_stage);
+    if (parsed.filter_lineage)  filtered = filtered.filter(t => t.lineage?.toLowerCase().includes(parsed.filter_lineage.toLowerCase()));
+    if (parsed.filter_priority) filtered = filtered.filter(t => t.priority === parsed.filter_priority);
+
+    if (!filtered.length) {
+      const who = assigneeFilter ? ` for *${assigneeFilter}*` : '';
+      await say(`No active tasks found${who}.`);
+      await saveMemories(parsed.new_memories, text);
+      return;
+    }
+
+    const who = assigneeFilter ? ` assigned to *${assigneeFilter}*` : '';
+    const stageFilter = parsed.filter_stage ? ` · ${STAGE_LABELS[parsed.filter_stage] || parsed.filter_stage}` : '';
+    let reply = `*${filtered.length} active task${filtered.length > 1 ? 's' : ''}${who}${stageFilter}:*\n`;
+
+    reply += filtered.map(t => {
+      const pri = t.priority ? `${PRIORITY_EMOJI[t.priority] || '⚪'} ` : '';
+      const stage = STAGE_LABELS[t.stage] || t.stage;
+      const pct = t.percent_complete > 0 ? ` · ${t.percent_complete}%` : '';
+      const assignees = t.assignees?.length ? ` · 👤 ${t.assignees.join(', ')}` : '';
+      return `> ${pri}*${t.name}* — ${stage}${pct}${assignees}`;
+    }).join('\n');
+
+    await say(reply);
+    await saveMemories(parsed.new_memories, text);
+    return;
+  }
+
+  // ── 6D. QUERY TASK ───────────────────────────────────────────
   if (parsed.intent === 'query_task') {
     if (!parsed.matched_task_id) {
       await say('Can\'t place that one — what\'s the task name?');
