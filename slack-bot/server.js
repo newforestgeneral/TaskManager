@@ -170,14 +170,14 @@ async function handleCreationSession(slackUserId, userName, text, say) {
     return;
   }
 
+  const { step, data } = session;
+
   // Skip all remaining questions → jump to summary
   if (/^skip all$/i.test(t) && step !== 'confirm') {
     session.step = 'confirm';
     await say(buildSummary(data));
     return;
   }
-
-  const { step, data } = session;
   const isSkip = /^(skip|none|no|nobody|n\/a)$/i.test(t);
 
   // ── Confirm step ──
@@ -319,6 +319,9 @@ async function finaliseTask(slackUserId, userName, data, say) {
   recentTask.set(slackUserId, { id: created.id, name: data.name });
   creationSession.delete(slackUserId);
 
+  // Remember anyone assigned
+  await ensureWorkerMemory(newTask.assignees);
+
   const pri = data.priority || 'medium';
   const emoji = PRIORITY_EMOJI[pri] || '🟡';
   const details = [];
@@ -426,11 +429,11 @@ async function handleMessage({ text, slackUserId, say, client }) {
   let rawResponse;
   try {
     const response = await claude.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1000,
       messages: [{
         role: 'user',
-        content: `You are a task tracker assistant for Newforest, a UK estate management company.
+        content: `You are a task tracker assistant for Newforest, a Canadian retreat and meditation center undergoing construction on old and new buildings and landscaping.
 The person messaging is named "${userName}".
 Their message: "${text}"
 
@@ -755,6 +758,7 @@ Signal patterns:
       }
       dbUpdate.assignees = current;
       changeLines.push(`Assignees: ${current.join(', ') || 'none'}`);
+      await ensureWorkerMemory(current);
     }
 
     if (Object.keys(dbUpdate).length > 0) {
@@ -850,6 +854,34 @@ Signal patterns:
 
   // Fallback
   await say('Not sure what you\'re after — you can update a task, create one, ask about one, or say "undo" to roll something back.');
+}
+
+// ── WORKER MEMORY ────────────────────────────────────────────
+// Called whenever we see a name used as an assignee.
+// Saves a worker memory entry if one doesn't already exist for that name.
+async function ensureWorkerMemory(names = []) {
+  for (const name of names) {
+    if (!name || name.length < 2) continue;
+    const key = name.toLowerCase().trim();
+
+    // Check if we already have a memory entry for this worker
+    const { data: existing } = await sb
+      .from('bot_memory')
+      .select('id')
+      .eq('category', 'worker')
+      .eq('key', key)
+      .limit(1);
+
+    if (existing?.length) continue; // already known
+
+    // Save a new entry
+    const { error } = await sb.from('bot_memory').upsert(
+      { category: 'worker', key, value: `${name} is a team member who can be assigned to tasks.`, source: 'auto-detected from assignee', updated_at: new Date().toISOString() },
+      { onConflict: 'category,key' }
+    );
+    if (error) console.error(`ensureWorkerMemory error for "${name}":`, error.message);
+    else console.log(`Worker memory saved: "${name}"`);
+  }
 }
 
 // ── MEMORY SAVE ──────────────────────────────────────────────
