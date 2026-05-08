@@ -54,6 +54,30 @@ const SNAP_DELIMITER = '\n[SNAP]:';
 
 const WIZARD_STEPS = ['name', 'description', 'assignees', 'location', 'priority', 'lineage', 'due_date'];
 
+const TASK_STAGE_NAMES = {
+  0: 'Name Only',
+  1: 'Created',
+  2: 'Scheduled',
+  3: 'Started',
+  4: 'Reporting',
+  5: 'Lapsed',
+  6: 'Final Progress',
+  7: 'Closed',
+};
+
+// Text stage kept in sync so the web app kanban still works
+const STAGE_FOR_TASK_STAGE = {
+  0: 'assigned', 1: 'assigned', 2: 'assigned',
+  3: 'inprogress', 4: 'inprogress', 5: 'inprogress',
+  6: 'review',
+  7: 'complete',
+};
+
+// Lineages whose tasks are always weather-checked
+const OUTDOOR_LINEAGES = ['Land & Forest', 'Farm & Garden', 'Site Infrastructure'];
+// Lineages checked only when weather_dependent = 'yes'
+const PARTIAL_OUTDOOR_LINEAGES = ['Building Improvements', 'Other Building'];
+
 // ── HELPERS ──────────────────────────────────────────────────
 function nowLabel() {
   return new Date().toLocaleTimeString('en-GB', {
@@ -204,6 +228,91 @@ function findCandidateTasks(text, tasks, limit = 4) {
     .map(x => x.task);
 }
 
+// Returns true if right now is Mon–Fri 9am–5pm America/Toronto
+function isWorkingHours() {
+  const now  = new Date();
+  const dow  = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Toronto', weekday: 'short' }).format(now);
+  const hour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Toronto', hour: 'numeric', hour12: false }).format(now), 10);
+  return !['Sat', 'Sun'].includes(dow) && hour >= 9 && hour < 17;
+}
+
+// Counts working hours (Mon–Fri 9am–5pm Toronto) between two ISO timestamps.
+// Used for the lapse check — a task only lapses during working time.
+function workingHoursElapsed(startISO, endISO) {
+  const TZ = 'America/Toronto';
+  const WORK_START = 9;
+  const WORK_END   = 17;
+
+  function parts(date) {
+    const dow  = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }).format(date);
+    const time = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+    const [h, m] = time.split(':').map(Number);
+    const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return { dow: dowMap[dow], hour: h === 24 ? 0 : h, minute: m };
+  }
+
+  // Advance date to the next weekday at WORK_START.
+  // Adding multiples of 24 h is DST-approximate but accurate enough for an hourly lapse check.
+  function nextWorkday9am(date) {
+    let d = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+    for (let i = 0; i < 3; i++) {
+      const p = parts(d);
+      if (p.dow >= 1 && p.dow <= 5) {
+        const mOffset = (WORK_START - p.hour) * 60 - p.minute;
+        return new Date(d.getTime() + mOffset * 60 * 1000);
+      }
+      d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+    }
+    return d;
+  }
+
+  const start = new Date(startISO);
+  const end   = new Date(endISO);
+  if (end <= start) return 0;
+
+  let totalMinutes = 0;
+  let cursor = new Date(start);
+
+  while (cursor < end) {
+    const p = parts(cursor);
+
+    // Weekend → jump to Monday 9am
+    if (p.dow === 0 || p.dow === 6) {
+      const daysToMon = p.dow === 0 ? 1 : 2;
+      let d = new Date(cursor.getTime() + daysToMon * 24 * 60 * 60 * 1000);
+      const p2 = parts(d);
+      cursor = new Date(d.getTime() + ((WORK_START - p2.hour) * 60 - p2.minute) * 60 * 1000);
+      continue;
+    }
+
+    // Before 9am → jump to 9am
+    if (p.hour < WORK_START) {
+      cursor = new Date(cursor.getTime() + ((WORK_START - p.hour) * 60 - p.minute) * 60 * 1000);
+      continue;
+    }
+
+    // After 5pm → jump to next workday 9am
+    if (p.hour >= WORK_END) {
+      cursor = nextWorkday9am(cursor);
+      continue;
+    }
+
+    // In working hours — count remaining work minutes today or until end
+    const minsLeftToday = (WORK_END - p.hour) * 60 - p.minute;
+    const msToEnd       = end - cursor;
+
+    if (msToEnd <= minsLeftToday * 60 * 1000) {
+      totalMinutes += Math.floor(msToEnd / 60000);
+      break;
+    }
+
+    totalMinutes += minsLeftToday;
+    cursor = nextWorkday9am(cursor);
+  }
+
+  return totalMinutes / 60;
+}
+
 function stepQuestion(step) {
   switch (step) {
     case 'name':
@@ -235,6 +344,105 @@ function buildSummary(data) {
   if (data.due_date)                 lines.push(`> 📅 Due ${data.due_date}`);
   lines.push(`\n*confirm* to create · *cancel* to scrap it`);
   return lines.join('\n');
+}
+
+// ── STAGE MANAGEMENT ─────────────────────────────────────────
+
+// Persist a stage change and keep the legacy text stage in sync for the web app.
+async function setTaskStage(taskId, newStage, extraFields = {}) {
+  const update = {
+    task_stage: newStage,
+    stage: STAGE_FOR_TASK_STAGE[newStage] || 'assigned',
+    ...extraFields,
+  };
+  if (newStage === 3 && !extraFields.stage_started_at) {
+    update.stage_started_at = new Date().toISOString();
+  }
+  const { error } = await sb.from('tasks').update(update).eq('id', taskId);
+  if (error) console.error(`setTaskStage error (task ${taskId} → ${newStage}):`, error.message);
+  return !error;
+}
+
+// Called after any field update. Silently promotes stages 0→1 and 1→2
+// when the required fields are now present. Stages 3+ require explicit triggers.
+async function autoPromoteStage(taskId, task) {
+  if (!task || task.task_stage >= 3) return null; // 3+ are event-driven
+
+  let target = task.task_stage;
+
+  if (target < 1 && task.description &&
+      (task.tools?.length > 0 || task.materials?.length > 0)) {
+    target = 1;
+  }
+  if (target < 2 && task.start_date && task.estimated_hours && task.assignees?.length > 0) {
+    target = 2;
+  }
+
+  if (target !== task.task_stage) {
+    await setTaskStage(taskId, target);
+    console.log(`Auto-promoted task "${task.name}": S${task.task_stage} → S${target}`);
+    return target;
+  }
+  return null;
+}
+
+// Hourly lapse check — runs only during working hours.
+// Finds stage-3/4 tasks whose working hours elapsed since start exceeds estimated_hours,
+// marks them as stage 5, and posts a Slack alert.
+async function checkLapsedTasks(slackClient, channelId) {
+  if (!channelId) return;
+
+  const { data: activeTasks, error } = await sb
+    .from('tasks')
+    .select('id, name, task_stage, assignees, start_date, estimated_hours, stage_started_at')
+    .in('task_stage', [3, 4])
+    .not('estimated_hours', 'is', null);
+
+  if (error) { console.error('checkLapsedTasks fetch error:', error.message); return; }
+
+  const now = new Date().toISOString();
+
+  for (const task of activeTasks || []) {
+    const refDate = task.stage_started_at || task.start_date;
+    if (!refDate) continue;
+
+    const elapsed = workingHoursElapsed(refDate, now);
+    if (elapsed < task.estimated_hours) continue;
+
+    // Check for any real update since the task started (exclude bot snapshots)
+    const { data: updates } = await sb
+      .from('task_updates')
+      .select('created_at')
+      .eq('task_id', task.id)
+      .gte('created_at', refDate)
+      .not('text', 'like', '%[SNAP]%')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    // If there's been a human update since start, don't lapse
+    if (updates?.length > 0) continue;
+
+    // Mark as lapsed
+    await setTaskStage(task.id, 5);
+    await sb.from('task_updates').insert({
+      task_id: task.id,
+      author:  'Task Bot',
+      text:    `Task automatically marked as Lapsed — ${task.estimated_hours}h of working time elapsed with no progress report.`,
+      date:    todayISO(),
+      via:     'Slack Bot',
+    });
+
+    const assigneeNames = task.assignees?.length ? task.assignees.join(', ') : 'unassigned';
+    try {
+      await slackClient.chat.postMessage({
+        channel: channelId,
+        text: `⚠️ *${task.name}* has lapsed — ${task.estimated_hours}h of working time elapsed with no update.\n> 👤 ${assigneeNames} · Please log a progress report to continue.`,
+      });
+    } catch (e) {
+      console.error('Lapse alert post error:', e.message);
+    }
+    console.log(`Task "${task.name}" lapsed after ${elapsed.toFixed(1)}h working hours`);
+  }
 }
 
 // ── DISAMBIGUATION HANDLER ───────────────────────────────────
@@ -437,18 +645,30 @@ async function finaliseTask(slackUserId, userName, data, say) {
     .limit(1);
   const tmpl = tmplRows?.[0] || {};
 
+  const assignees = data.assignees?.length ? data.assignees : (tmpl.default_assignees || []);
+  const description = data.description || tmpl.description || '';
+  const tools = tmpl.default_tools || [];
+  const materials = tmpl.default_materials || [];
+  const estimatedHours = data.estimated_hours || tmpl.default_estimated_hours || null;
+
+  // Compute initial task_stage from what was provided
+  let initialStage = 0;
+  if (description && (tools.length > 0 || materials.length > 0)) initialStage = 1;
+  if (initialStage >= 1 && data.start_date && estimatedHours && assignees.length > 0) initialStage = 2;
+
   const newTask = {
     name:               data.name,
-    description:        data.description        || tmpl.description           || '',
+    description,
     priority:           data.priority            || tmpl.default_priority      || null,
-    stage:              tmpl.default_stage                                     || 'assigned',
-    assignees:          data.assignees?.length   ? data.assignees : (tmpl.default_assignees || []),
+    stage:              STAGE_FOR_TASK_STAGE[initialStage] || 'assigned',
+    task_stage:         initialStage,
+    assignees,
     lineage:            data.lineage             || tmpl.default_lineage       || null,
-    estimated_hours:    data.estimated_hours     || tmpl.default_estimated_hours || null,
+    estimated_hours:    estimatedHours,
     weather_dependent:  tmpl.default_weather_dependent                         || 'no',
     steps:              tmpl.default_steps                                     || [],
-    materials:          tmpl.default_materials                                 || [],
-    tools:              tmpl.default_tools                                     || [],
+    materials,
+    tools,
     task_notes:         tmpl.default_task_notes                                || null,
     percent_complete:   0,
     creator_name:       userName,
@@ -532,7 +752,7 @@ async function handleMessage({ text, slackUserId, say, client }) {
     // Treat as query_task on the last touched task — no need to call Claude
     const { data: taskRow } = await sb
       .from('tasks')
-      .select('id, name, stage, percent_complete, assignees, lineage, priority, description, start_date, due_date, follow_up_date, estimated_hours, location, task_notes')
+      .select('id, name, stage, task_stage, percent_complete, assignees, lineage, priority, description, start_date, due_date, follow_up_date, estimated_hours, location, task_notes')
       .eq('id', last.id)
       .single();
 
@@ -571,7 +791,7 @@ async function handleMessage({ text, slackUserId, say, client }) {
   // ── 3. Fetch active tasks ──
   const { data: tasks, error: tasksErr } = await sb
     .from('tasks')
-    .select('id, name, stage, percent_complete, assignees, lineage, priority, description, start_date, due_date, follow_up_date, estimated_hours, location, task_notes')
+    .select('id, name, stage, task_stage, percent_complete, assignees, lineage, priority, description, start_date, due_date, follow_up_date, estimated_hours, location, task_notes, stage_started_at, tools, materials, weather_dependent')
     .not('stage', 'eq', 'complete')
     .order('created_at', { ascending: true });
 
@@ -627,7 +847,7 @@ async function handleMessage({ text, slackUserId, say, client }) {
   }
 
   const taskList = (tasks || []).map(t =>
-    `ID: ${t.id} | "${t.name}" | Stage: ${t.stage} | ${t.percent_complete}% | Priority: ${t.priority} | Assignees: ${(t.assignees || []).join(', ') || 'none'} | Lineage: ${t.lineage || 'none'}`
+    `ID: ${t.id} | "${t.name}" | TaskStage: S${t.task_stage ?? 0} (${TASK_STAGE_NAMES[t.task_stage ?? 0]}) | ${t.percent_complete}% | Priority: ${t.priority} | Assignees: ${(t.assignees || []).join(', ') || 'none'} | Lineage: ${t.lineage || 'none'}`
   ).join('\n');
 
   const lastTouched = recentTask.get(slackUserId);
@@ -1074,6 +1294,61 @@ Signal patterns:
       await ensureWorkerMemory(current);
     }
 
+    // ── Stage transition detection ──────────────────────────
+    const currentStage = task?.task_stage ?? 0;
+    const msgLower = text.toLowerCase();
+
+    // S2→S3: assignee confirms they've started
+    if (currentStage === 2 && /\b(started|starting|on it|underway|begun|kicked off|going now|beginning)\b/i.test(msgLower)) {
+      dbUpdate.task_stage       = 3;
+      dbUpdate.stage            = 'inprogress';
+      dbUpdate.stage_started_at = new Date().toISOString();
+      changeLines.push(`Stage: ${TASK_STAGE_NAMES[2]} → ${TASK_STAGE_NAMES[3]}`);
+    }
+
+    // S3→S4: any progress update when already started
+    if (currentStage === 3 && !dbUpdate.task_stage) {
+      dbUpdate.task_stage = 4;
+      changeLines.push(`Stage: ${TASK_STAGE_NAMES[3]} → ${TASK_STAGE_NAMES[4]}`);
+    }
+
+    // S5→S4: recovery from lapsed when assignee logs a new update
+    if (currentStage === 5 && !dbUpdate.task_stage) {
+      dbUpdate.task_stage = 4;
+      dbUpdate.stage      = 'inprogress';
+      changeLines.push(`Stage: ${TASK_STAGE_NAMES[5]} → ${TASK_STAGE_NAMES[4]} (recovered)`);
+    }
+
+    // S3/S4/S5→S6: assignee marks as final
+    if ([3, 4, 5].includes(currentStage) && !dbUpdate.task_stage &&
+        /\b(final|last update|all done|fully complete|finished|wrapped up|done done|that's it)\b/i.test(msgLower)) {
+      dbUpdate.task_stage = 6;
+      dbUpdate.stage      = 'review';
+      changeLines.push(`Stage: → ${TASK_STAGE_NAMES[6]}`);
+    }
+
+    // S6→S7: admin/manager closes the task
+    if (currentStage === 6 && !dbUpdate.task_stage &&
+        /\b(close|closing|closed|done|complete|finished|shut it|wrap it up)\b/i.test(msgLower)) {
+      dbUpdate.task_stage = 7;
+      dbUpdate.stage      = 'complete';
+      changeLines.push(`Stage: → ${TASK_STAGE_NAMES[7]}`);
+    }
+
+    // Auto-promote stages 0–2 if new field values now qualify
+    if (!dbUpdate.task_stage && currentStage < 3) {
+      const merged = { ...task, ...dbUpdate };
+      const newStage = await autoPromoteStage(parsed.matched_task_id, merged);
+      if (newStage !== null) {
+        changeLines.push(`Stage: S${currentStage} → S${newStage} (${TASK_STAGE_NAMES[newStage]})`);
+        // setTaskStage already persisted it — remove from dbUpdate to avoid double-write
+        delete dbUpdate.task_stage;
+        delete dbUpdate.stage;
+        delete dbUpdate.stage_started_at;
+      }
+    }
+    // ── End stage transitions ────────────────────────────────
+
     if (Object.keys(dbUpdate).length > 0) {
       const { error: taskErr } = await sb.from('tasks').update(dbUpdate).eq('id', parsed.matched_task_id);
       if (taskErr) {
@@ -1191,6 +1466,136 @@ Signal patterns:
   await say('Not sure what you\'re after — you can update a task, create one, ask about one, or say "undo" to roll something back.');
 }
 
+// ── WEATHER SCHEDULING ───────────────────────────────────────
+
+async function fetchWeatherForecast() {
+  const lat    = process.env.NEWFOREST_LAT    || '43.9196';
+  const lng    = process.env.NEWFOREST_LNG    || '-80.0940';
+  const apiKey = process.env.OPENWEATHER_API_KEY;
+  if (!apiKey) { console.warn('OPENWEATHER_API_KEY not set — skipping weather check'); return null; }
+
+  const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`OpenWeatherMap ${res.status}: ${res.statusText}`);
+  return res.json();
+}
+
+// Returns a Set of "YYYY-MM-DD" date strings (Toronto) with bad weather.
+// Bad = rain probability > 60%, temp < 2°C (frost), or any snow.
+function getBadWeatherDays(forecast) {
+  const TZ      = 'America/Toronto';
+  const badDays = new Set();
+
+  for (const item of forecast.list || []) {
+    const date      = new Date(item.dt * 1000).toLocaleDateString('en-CA', { timeZone: TZ });
+    const rainProb  = (item.pop || 0) * 100;
+    const temp      = item.main?.temp ?? 99;
+    const weather   = item.weather?.[0]?.main?.toLowerCase() || '';
+    const hasSnow   = weather === 'snow' || (item.snow?.['3h'] ?? 0) > 0;
+    const hasFrost  = temp < 2;
+    const hasRain   = rainProb > 60;
+
+    if (hasSnow || hasFrost || hasRain) badDays.add(date);
+  }
+  return badDays;
+}
+
+async function checkWeatherAlerts(slackClient, channelId) {
+  if (!channelId) return;
+  try {
+    const forecast = await fetchWeatherForecast();
+    if (!forecast) return;
+
+    const badDays = getBadWeatherDays(forecast);
+    if (badDays.size === 0) { console.log('Weather check: no bad days in forecast'); return; }
+
+    // Tasks in stages 2–4 with scheduled dates on bad days
+    const { data: tasks } = await sb
+      .from('tasks')
+      .select('id, name, task_stage, assignees, start_date, due_date, lineage, weather_dependent')
+      .in('task_stage', [2, 3, 4]);
+
+    const atRisk = [];
+    for (const task of tasks || []) {
+      const fullOutdoor    = OUTDOOR_LINEAGES.includes(task.lineage);
+      const partialOutdoor = PARTIAL_OUTDOOR_LINEAGES.includes(task.lineage) && task.weather_dependent === 'yes';
+      if (!fullOutdoor && !partialOutdoor) continue;
+
+      const hits = [task.start_date, task.due_date].filter(d => d && badDays.has(d));
+      if (hits.length) atRisk.push({ task, badDates: hits });
+    }
+
+    if (!atRisk.length) { console.log('Weather check: no at-risk tasks'); return; }
+
+    // Group tasks by bad day for the Slack message
+    const byDay = {};
+    for (const { task, badDates } of atRisk) {
+      for (const d of badDates) {
+        if (!byDay[d]) byDay[d] = [];
+        byDay[d].push(task);
+      }
+    }
+
+    const lines = Object.keys(byDay).sort().map(day => {
+      const label = new Date(day + 'T12:00:00Z').toLocaleDateString('en-US', {
+        timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric',
+      });
+      const taskLines = byDay[day].map(t => {
+        const who = t.assignees?.join(', ') || 'unassigned';
+        return `  • *${t.name}* · 👤 ${who}`;
+      }).join('\n');
+      return `🌧 *Weather alert — ${label}*\n${taskLines}`;
+    });
+
+    await slackClient.chat.postMessage({
+      channel: channelId,
+      text: lines.join('\n\n') + '\n\n_Reply "reschedule [task name]" to push dates, or manage in the app._',
+    });
+
+    // Record the check time in bot_memory
+    await sb.from('bot_memory').upsert(
+      { category: 'config', key: 'last_weather_check', value: new Date().toISOString(),
+        source: 'auto', updated_at: new Date().toISOString() },
+      { onConflict: 'category,key' }
+    );
+    console.log(`Weather alert sent — ${atRisk.length} tasks at risk across ${Object.keys(byDay).length} bad day(s)`);
+  } catch (e) {
+    console.error('Weather check error:', e.message);
+  }
+}
+
+// Resolve a channel name to its Slack channel ID.
+async function resolveChannelId(slackClient, name) {
+  try {
+    const cleanName = name.replace(/^#/, '');
+    let cursor;
+    do {
+      const res = await slackClient.conversations.list({ types: 'public_channel,private_channel', limit: 200, cursor });
+      const found = res.channels?.find(c => c.name === cleanName);
+      if (found) return found.id;
+      cursor = res.response_metadata?.next_cursor;
+    } while (cursor);
+  } catch (e) { console.error('resolveChannelId error:', e.message); }
+  return null;
+}
+
+// Called once the bot is running. Sets up hourly lapse check and 24h weather check.
+async function startScheduledChecks(slackClient) {
+  const channelId = await resolveChannelId(slackClient, 'task-updates');
+  if (!channelId) { console.warn('Could not resolve #task-updates channel — scheduled checks disabled'); return; }
+  console.log(`Scheduled checks armed — channel: ${channelId}`);
+
+  // ── Hourly lapse check (working hours only) ──
+  setInterval(async () => {
+    if (!isWorkingHours()) return;
+    await checkLapsedTasks(slackClient, channelId);
+  }, 60 * 60 * 1000);
+
+  // ── 24h weather check (first run after 10s startup delay) ──
+  setTimeout(() => checkWeatherAlerts(slackClient, channelId), 10_000);
+  setInterval(() => checkWeatherAlerts(slackClient, channelId), 24 * 60 * 60 * 1000);
+}
+
 // ── SLACK NAME → WORKER NAME RESOLVER ───────────────────────
 // Tries to match a Slack display/real name to a known worker in bot_memory.
 // Handles: exact match, prefix match, initials (e.g. "KM" → "Keith Macabenta"),
@@ -1298,4 +1703,7 @@ async function saveMemories(newMemories, sourceText) {
   const port = process.env.PORT || 3000;
   await app.start(port);
   console.log(`Newforest Task Bot running on port ${port}`);
+
+  // Kick off lapse + weather checks after bot is fully online
+  await startScheduledChecks(app.client);
 })();
