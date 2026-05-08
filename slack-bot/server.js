@@ -555,6 +555,19 @@ async function handleMessage({ text, slackUserId, say, client }) {
     return;
   }
 
+  // ── Abbreviated commands ─────────────────────────────────────
+  // nt [name]  → new task (start wizard, optional name prefill)
+  // c <term>   → change focus to a different task
+  // et [text]  → edit the current focused task
+  const trimmed = text.trim();
+
+  // nt — new task
+  if (/^nt(\s|$)/i.test(trimmed)) {
+    const nameArg = trimmed.slice(2).trim();
+    await startWizard(slackUserId, say, nameArg ? { name: nameArg } : {});
+    return;
+  }
+
   // ── 3. Fetch active tasks ──
   const { data: tasks, error: tasksErr } = await sb
     .from('tasks')
@@ -566,6 +579,51 @@ async function handleMessage({ text, slackUserId, say, client }) {
     console.error('Supabase fetch error:', tasksErr);
     await say('Can\'t reach the database right now — give it a second and try again.');
     return;
+  }
+
+  // c <term> — switch focused task
+  if (/^c\s+\S/i.test(trimmed)) {
+    const searchTerm = trimmed.slice(1).trim();
+    const candidates = findCandidateTasks(searchTerm, tasks || []);
+    if (!candidates.length) {
+      await say(`No active task matches "${searchTerm}".`);
+      return;
+    }
+    if (candidates.length === 1) {
+      recentTask.set(slackUserId, { id: candidates[0].id, name: candidates[0].name });
+      await say(`In focus: *${candidates[0].name}* — say "more info", update it, or ask away.`);
+      return;
+    }
+    disambigSession.set(slackUserId, {
+      options: candidates.slice(0, 4).map(t => ({ label: t.name, value: t.id })),
+      onResolve: async (chosenId, say) => {
+        const chosen = candidates.find(t => t.id === chosenId);
+        recentTask.set(slackUserId, { id: chosenId, name: chosen?.name });
+        await say(`In focus: *${chosen?.name}* — say "more info", update it, or ask away.`);
+      }
+    });
+    const list = candidates.slice(0, 4).map((t, i) => `${i + 1}. ${t.name}`).join('\n');
+    await say(`Which task?\n${list}\n_Type the number._`);
+    return;
+  }
+
+  // et [text] — edit focused task
+  // "et" alone: prompt what to change
+  // "et <changes>": transform into explicit update message for Claude
+  let claudeText = text; // default — passed to Claude unchanged
+  if (/^et(\s|$)/i.test(trimmed)) {
+    const last = recentTask.get(slackUserId);
+    if (!last) {
+      await say(`No task in focus. Use \`c <task name>\` to select one first, or start with the task name.`);
+      return;
+    }
+    const editContent = trimmed.slice(2).trim();
+    if (!editContent) {
+      await say(`Editing *${last.name}* — what would you like to change?\n> e.g. "priority high" · "80% done" · "assign Keith" · "due Friday"`);
+      return;
+    }
+    // Rephrase so Claude has zero ambiguity about which task and what to do
+    claudeText = `Update "${last.name}" (ID: ${last.id}): ${editContent}`;
   }
 
   const taskList = (tasks || []).map(t =>
@@ -604,7 +662,7 @@ async function handleMessage({ text, slackUserId, say, client }) {
         role: 'user',
         content: `You are a task tracker assistant for Newforest, a Canadian retreat and meditation center undergoing construction on old and new buildings and landscaping.
 The person messaging is named "${userName}".
-Their message: "${text}"
+Their message: "${claudeText}"
 
 Active tasks:
 ${taskList || '(no active tasks yet)'}
