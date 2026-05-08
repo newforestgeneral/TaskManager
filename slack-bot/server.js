@@ -786,19 +786,63 @@ async function handleMessage({ text, slackUserId, say, client }) {
     await say('Checking forecast…');
     try {
       const forecast = await fetchWeatherForecast();
-      if (!forecast) { await say('No weather data — check that OPENWEATHER_API_KEY is set.'); return; }
+      if (!forecast) { await say('⚠️ No weather data — check that OPENWEATHER_API_KEY is set.'); return; }
+
       const badDays = getBadWeatherDays(forecast);
+
       if (badDays.size === 0) {
-        await say('☀️ No bad weather days in the next 5 days.');
-      } else {
-        const dayList = [...badDays].sort().map(d =>
-          new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric' })
-        ).join(', ');
-        await say(`🌧 Bad weather forecast on: *${dayList}*\n_Alerts posted to #task-updates for any affected tasks._`);
+        await say('☀️ Clear skies — no bad weather in the next 5 days. All tasks on track.');
+        return;
       }
-      // Also post the full grouped alert to #task-updates if there are at-risk tasks
+
+      // Bad days exist — check for at-risk tasks
+      const { data: allTasks } = await sb
+        .from('tasks')
+        .select('id, name, task_stage, assignees, start_date, due_date, lineage, weather_dependent')
+        .in('task_stage', [2, 3, 4]);
+
+      const atRisk = [];
+      for (const task of allTasks || []) {
+        const fullOutdoor    = OUTDOOR_LINEAGES.includes(task.lineage);
+        const partialOutdoor = PARTIAL_OUTDOOR_LINEAGES.includes(task.lineage) && task.weather_dependent === 'yes';
+        if (!fullOutdoor && !partialOutdoor) continue;
+        const hits = [task.start_date, task.due_date].filter(d => d && badDays.has(d));
+        if (hits.length) atRisk.push({ task, badDates: hits });
+      }
+
+      const dayList = [...badDays].sort().map(d =>
+        new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric' })
+      ).join(', ');
+
+      if (!atRisk.length) {
+        await say(`🌧 Bad weather expected: *${dayList}*\nNo scheduled outdoor tasks are affected.`);
+        return;
+      }
+
+      // Build grouped alert reply
+      const byDay = {};
+      for (const { task, badDates } of atRisk) {
+        for (const d of badDates) {
+          if (!byDay[d]) byDay[d] = [];
+          byDay[d].push(task);
+        }
+      }
+      const lines = Object.keys(byDay).sort().map(day => {
+        const label = new Date(day + 'T12:00:00Z').toLocaleDateString('en-US', {
+          timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric',
+        });
+        const taskLines = byDay[day].map(t => {
+          const who = t.assignees?.join(', ') || 'unassigned';
+          return `  • *${t.name}* · 👤 ${who}`;
+        }).join('\n');
+        return `🌧 *${label}*\n${taskLines}`;
+      });
+      await say(lines.join('\n\n') + '\n\n_Manage dates in the app, or say "reschedule [task name]" to push them._');
+
+      // Also post to #task-updates so the team sees it
       const channelId = process.env.TASK_UPDATES_CHANNEL_ID || null;
       if (channelId) await checkWeatherAlerts(client, channelId);
+
     } catch (e) {
       console.error('Manual weather check error:', e.message);
       await say(`Weather check failed: ${e.message}`);
