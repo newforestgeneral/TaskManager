@@ -788,60 +788,53 @@ async function handleMessage({ text, slackUserId, say, client }) {
       const forecast = await fetchWeatherForecast();
       if (!forecast) { await say('⚠️ No weather data — check that OPENWEATHER_API_KEY is set.'); return; }
 
+      // Full weather report (5-day + hourly)
+      await say(buildWeatherReport(forecast));
+
+      // Check for at-risk tasks and append impact summary
       const badDays = getBadWeatherDays(forecast);
+      if (badDays.size > 0) {
+        const { data: allTasks } = await sb
+          .from('tasks')
+          .select('id, name, task_stage, assignees, start_date, due_date, lineage, weather_dependent')
+          .in('task_stage', [2, 3, 4]);
 
-      if (badDays.size === 0) {
-        await say('☀️ Clear skies — no bad weather in the next 5 days. All tasks on track.');
-        return;
-      }
-
-      // Bad days exist — check for at-risk tasks
-      const { data: allTasks } = await sb
-        .from('tasks')
-        .select('id, name, task_stage, assignees, start_date, due_date, lineage, weather_dependent')
-        .in('task_stage', [2, 3, 4]);
-
-      const atRisk = [];
-      for (const task of allTasks || []) {
-        const fullOutdoor    = OUTDOOR_LINEAGES.includes(task.lineage);
-        const partialOutdoor = PARTIAL_OUTDOOR_LINEAGES.includes(task.lineage) && task.weather_dependent === 'yes';
-        if (!fullOutdoor && !partialOutdoor) continue;
-        const hits = [task.start_date, task.due_date].filter(d => d && badDays.has(d));
-        if (hits.length) atRisk.push({ task, badDates: hits });
-      }
-
-      const dayList = [...badDays].sort().map(d =>
-        new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric' })
-      ).join(', ');
-
-      if (!atRisk.length) {
-        await say(`🌧 Bad weather expected: *${dayList}*\nNo scheduled outdoor tasks are affected.`);
-        return;
-      }
-
-      // Build grouped alert reply
-      const byDay = {};
-      for (const { task, badDates } of atRisk) {
-        for (const d of badDates) {
-          if (!byDay[d]) byDay[d] = [];
-          byDay[d].push(task);
+        const atRisk = [];
+        for (const task of allTasks || []) {
+          const fullOutdoor    = OUTDOOR_LINEAGES.includes(task.lineage);
+          const partialOutdoor = PARTIAL_OUTDOOR_LINEAGES.includes(task.lineage) && task.weather_dependent === 'yes';
+          if (!fullOutdoor && !partialOutdoor) continue;
+          const hits = [task.start_date, task.due_date].filter(d => d && badDays.has(d));
+          if (hits.length) atRisk.push({ task, badDates: hits });
         }
-      }
-      const lines = Object.keys(byDay).sort().map(day => {
-        const label = new Date(day + 'T12:00:00Z').toLocaleDateString('en-US', {
-          timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric',
-        });
-        const taskLines = byDay[day].map(t => {
-          const who = t.assignees?.join(', ') || 'unassigned';
-          return `  • *${t.name}* · 👤 ${who}`;
-        }).join('\n');
-        return `🌧 *${label}*\n${taskLines}`;
-      });
-      await say(lines.join('\n\n') + '\n\n_Manage dates in the app, or say "reschedule [task name]" to push them._');
 
-      // Also post to #task-updates so the team sees it
-      const channelId = process.env.TASK_UPDATES_CHANNEL_ID || null;
-      if (channelId) await checkWeatherAlerts(client, channelId);
+        if (!atRisk.length) {
+          await say('✅ No outdoor tasks scheduled on bad weather days.');
+        } else {
+          const byDay = {};
+          for (const { task, badDates } of atRisk) {
+            for (const d of badDates) {
+              (byDay[d] = byDay[d] || []).push(task);
+            }
+          }
+          const lines = Object.keys(byDay).sort().map(day => {
+            const label = new Date(day + 'T17:00:00Z').toLocaleDateString('en-US', {
+              timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric',
+            });
+            const taskLines = byDay[day].map(t =>
+              `  • *${t.name}* · 👤 ${t.assignees?.join(', ') || 'unassigned'}`
+            ).join('\n');
+            return `⚠️ *${label}*\n${taskLines}`;
+          });
+          await say(`*🌧 At-risk outdoor tasks:*\n${lines.join('\n\n')}\n_Manage dates in the app, or say "reschedule [task name]" to push them._`);
+
+          // Also notify #task-updates so the whole team sees it
+          const channelId = process.env.TASK_UPDATES_CHANNEL_ID || null;
+          if (channelId) await checkWeatherAlerts(client, channelId);
+        }
+      } else {
+        await say('☀️ No bad weather days in the forecast — all tasks on track.');
+      }
 
     } catch (e) {
       console.error('Manual weather check error:', e.message);
@@ -1567,6 +1560,88 @@ function getBadWeatherDays(forecast) {
     if (hasSnow || hasFrost || hasRain) badDays.add(date);
   }
   return badDays;
+}
+
+// Builds a full Slack-formatted weather report: 5-day overview + hourly breakdown.
+function buildWeatherReport(forecast) {
+  const TZ = 'America/Toronto';
+
+  function iconEmoji(icon) {
+    const id = icon?.slice(0, 2) || '';
+    return ({ '01':'☀️','02':'🌤','03':'⛅','04':'☁️','09':'🌧','10':'🌦','11':'⛈','13':'🌨','50':'🌫' })[id] || '🌡';
+  }
+
+  function windDir(deg) {
+    if (deg == null) return '  ';
+    return ['N ','NE','E ','SE','S ','SW','W ','NW'][Math.round(deg / 45) % 8];
+  }
+
+  function fmtDate(dateStr, opts) {
+    // Use noon UTC to avoid DST/timezone boundary issues with date-only strings
+    return new Date(dateStr + 'T17:00:00Z').toLocaleDateString('en-US', { timeZone: TZ, ...opts });
+  }
+
+  function fmtTime(dt) {
+    return new Date(dt * 1000).toLocaleTimeString('en-US', {
+      timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true,
+    }).replace(' ', '').toLowerCase();
+  }
+
+  // Group 3-hour slots by Toronto calendar date
+  const byDay = {};
+  for (const item of forecast.list || []) {
+    const date = new Date(item.dt * 1000).toLocaleDateString('en-CA', { timeZone: TZ });
+    (byDay[date] = byDay[date] || []).push(item);
+  }
+  const days = Object.keys(byDay).sort().slice(0, 5);
+
+  // ── 5-day summary ────────────────────────────────────────────
+  const summaryLines = days.map(d => {
+    const slots   = byDay[d];
+    const high    = Math.round(Math.max(...slots.map(s => s.main.temp_max ?? s.main.temp)));
+    const low     = Math.round(Math.min(...slots.map(s => s.main.temp_min ?? s.main.temp)));
+    const maxPop  = Math.round(Math.max(...slots.map(s => (s.pop || 0) * 100)));
+    const avgKmh  = Math.round(slots.reduce((a, s) => a + (s.wind?.speed || 0), 0) / slots.length * 3.6);
+    const mid     = slots[Math.floor(slots.length / 2)] || slots[0];
+    const emoji   = iconEmoji(mid.weather?.[0]?.icon);
+    const desc    = capitalize(mid.weather?.[0]?.description || 'n/a');
+    const dayLbl  = fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric' }).padEnd(11);
+    const condLbl = (emoji + ' ' + desc).padEnd(20);
+    const tempLbl = (`${high > 0 ? '+' : ''}${high}°/${low > 0 ? '+' : ''}${low}°C`).padStart(10);
+    const popLbl  = (maxPop + '% rain').padStart(9);
+    const windLbl = windDir(mid.wind?.deg) + ' ' + avgKmh + 'km/h';
+    return `${dayLbl} ${condLbl}${tempLbl}  ${popLbl}  ${windLbl}`;
+  });
+
+  // ── Hourly breakdown ─────────────────────────────────────────
+  const hourlyBlocks = days.map(d => {
+    const dayFull = fmtDate(d, { weekday: 'long', month: 'short', day: 'numeric' });
+    const lines   = byDay[d].map(s => {
+      const t     = fmtTime(s.dt).padStart(7);
+      const emoji = iconEmoji(s.weather?.[0]?.icon);
+      const desc  = capitalize(s.weather?.[0]?.description || '').slice(0, 13).padEnd(13);
+      const temp  = (`${Math.round(s.main.temp) > 0 ? '+' : ''}${Math.round(s.main.temp)}°C`).padStart(5);
+      const pop   = (Math.round((s.pop || 0) * 100) + '%').padStart(4);
+      const wind  = windDir(s.wind?.deg).trim() + ' ' + Math.round((s.wind?.speed || 0) * 3.6) + 'km/h';
+      const snow  = s.snow?.['3h'] ? ` ❄${s.snow['3h']}mm` : '';
+      const rain  = s.rain?.['3h'] ? ` 💧${s.rain['3h']}mm` : '';
+      return `${t}  ${emoji} ${desc}  ${temp}  ${pop} rain  ${wind}${rain}${snow}`;
+    });
+    return `*${dayFull}*\n\`\`\`\n${lines.join('\n')}\n\`\`\``;
+  });
+
+  return [
+    '*🌤 Forecast — Orangeville, ON*',
+    '',
+    '*5-Day Overview*',
+    '```',
+    summaryLines.join('\n'),
+    '```',
+    '',
+    '*Hourly Breakdown (3h intervals)*',
+    '',
+    hourlyBlocks.join('\n\n'),
+  ].join('\n');
 }
 
 async function checkWeatherAlerts(slackClient, channelId) {
