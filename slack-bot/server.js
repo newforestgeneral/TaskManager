@@ -781,6 +781,31 @@ async function handleMessage({ text, slackUserId, say, client }) {
   // et [text]  → edit the current focused task
   const trimmed = text.trim();
 
+  // weather — manual weather check
+  if (/^(weather|weather update|check weather|weather check|weather report|forecast|what('?s| is) the weather|weather this week|weather next week|weather forecast|any weather|bad weather)(\?)?$/i.test(trimmed)) {
+    await say('Checking forecast…');
+    try {
+      const forecast = await fetchWeatherForecast();
+      if (!forecast) { await say('No weather data — check that OPENWEATHER_API_KEY is set.'); return; }
+      const badDays = getBadWeatherDays(forecast);
+      if (badDays.size === 0) {
+        await say('☀️ No bad weather days in the next 5 days.');
+      } else {
+        const dayList = [...badDays].sort().map(d =>
+          new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric' })
+        ).join(', ');
+        await say(`🌧 Bad weather forecast on: *${dayList}*\n_Alerts posted to #task-updates for any affected tasks._`);
+      }
+      // Also post the full grouped alert to #task-updates if there are at-risk tasks
+      const channelId = process.env.TASK_UPDATES_CHANNEL_ID || null;
+      if (channelId) await checkWeatherAlerts(client, channelId);
+    } catch (e) {
+      console.error('Manual weather check error:', e.message);
+      await say(`Weather check failed: ${e.message}`);
+    }
+    return;
+  }
+
   // nt — new task
   if (/^nt(\s|$)/i.test(trimmed)) {
     const nameArg = trimmed.slice(2).trim();
@@ -1581,8 +1606,9 @@ async function resolveChannelId(slackClient, name) {
 
 // Called once the bot is running. Sets up hourly lapse check and 24h weather check.
 async function startScheduledChecks(slackClient) {
-  const channelId = await resolveChannelId(slackClient, 'task-updates');
-  if (!channelId) { console.warn('Could not resolve #task-updates channel — scheduled checks disabled'); return; }
+  // Prefer env var — avoids needing channels:read scope
+  const channelId = process.env.TASK_UPDATES_CHANNEL_ID || await resolveChannelId(slackClient, 'task-updates');
+  if (!channelId) { console.warn('Could not resolve #task-updates channel — set TASK_UPDATES_CHANNEL_ID env var or add channels:read scope'); return; }
   console.log(`Scheduled checks armed — channel: ${channelId}`);
 
   // ── Hourly lapse check (working hours only) ──
