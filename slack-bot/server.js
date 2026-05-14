@@ -256,6 +256,60 @@ function findNextClearDay(startDateStr, badDays, maxDaysAhead = 14) {
   return null;
 }
 
+// Returns the ordered array of working-day dates a task will occupy, based on
+// its start_date and estimated_hours (8h per working day, capped at 30 days).
+function getTaskDateSpan(startDateStr, estimatedHours) {
+  if (!startDateStr) return [];
+  const HOURS_PER_DAY = 8;
+  const dates = [];
+  let remaining = estimatedHours > 0 ? estimatedHours : HOURS_PER_DAY; // default 1 day if unset
+  let cursor = new Date(startDateStr + 'T17:00:00Z');
+
+  while (remaining > 0 && dates.length < 30) {
+    const dateStr = cursor.toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
+    if (isWorkerAvailableOnDate(dateStr)) {
+      dates.push(dateStr);
+      remaining -= HOURS_PER_DAY;
+    }
+    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return dates;
+}
+
+// Returns { workerName: totalHours } for all tasks active on a given date.
+// Each task contributes min(estimated_hours, 8) hours per day per assignee.
+function getWorkerLoad(tasks, dateStr) {
+  const load = {};
+  const HOURS_PER_DAY = 8;
+
+  for (const task of tasks || []) {
+    if (!task.assignees?.length || task.task_stage >= 7) continue;
+    const span = getTaskDateSpan(task.start_date, task.estimated_hours);
+    if (!span.includes(dateStr)) continue;
+
+    const hoursThisDay = Math.min(task.estimated_hours || HOURS_PER_DAY, HOURS_PER_DAY);
+    for (const assignee of task.assignees) {
+      load[assignee] = (load[assignee] || 0) + hoursThisDay;
+    }
+  }
+  return load;
+}
+
+// Returns an array of the next `count` working-day date strings (YYYY-MM-DD, Toronto),
+// starting from today inclusive.
+function getNextWorkingDays(count = 5) {
+  const TZ = 'America/Toronto';
+  const dates = [];
+  let cursor = new Date(new Date().toLocaleDateString('en-CA', { timeZone: TZ }) + 'T17:00:00Z');
+
+  while (dates.length < count) {
+    const dateStr = cursor.toLocaleDateString('en-CA', { timeZone: TZ });
+    if (isWorkerAvailableOnDate(dateStr)) dates.push(dateStr);
+    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return dates;
+}
+
 // Counts working hours (Mon–Fri 9am–5pm Toronto) between two ISO timestamps.
 // Used for the lapse check — a task only lapses during working time.
 function workingHoursElapsed(startISO, endISO) {
@@ -767,6 +821,10 @@ async function handleMessage({ text, slackUserId, say, client }) {
   }
 
   // ── Active reschedule confirmation? ──
+  if (rescheduleSession.has(`batch:${slackUserId}`)) {
+    await handleBatchRescheduleReply(slackUserId, text, say);
+    return;
+  }
   if (rescheduleSession.has(slackUserId)) {
     await handleRescheduleReply(slackUserId, text, say);
     return;
@@ -872,6 +930,18 @@ async function handleMessage({ text, slackUserId, say, client }) {
   // schedule — today's recommended tasks per worker
   if (/^(schedule|today'?s schedule|what('?s| is) scheduled|today'?s plan|daily plan|what should we work on|what to work on|today'?s tasks|tasks today)(\?)?$/i.test(trimmed)) {
     await handleScheduleCommand(say);
+    return;
+  }
+
+  // week — 5-day forward view with weather + workload
+  if (/^(week|this week|week view|weekly|weekly schedule|week schedule|week ahead|what'?s? this week)(\?)?$/i.test(trimmed)) {
+    await handleWeekCommand(say);
+    return;
+  }
+
+  // reschedule all <date> — batch move all outdoor tasks on a given date
+  if (/^reschedule all\s+\S/i.test(trimmed)) {
+    await handleBatchRescheduleCommand(slackUserId, trimmed.replace(/^reschedule all\s+/i, '').trim(), say);
     return;
   }
 
@@ -1581,7 +1651,7 @@ async function fetchWeatherForecast() {
 }
 
 // Returns a Set of "YYYY-MM-DD" date strings (Toronto) with bad weather.
-// Bad = rain probability > 60%, temp < 2°C (frost), or any snow.
+// Bad = rain probability > 60%, temp < 2°C (frost), any snow, or sustained wind > 50 km/h.
 function getBadWeatherDays(forecast) {
   const TZ      = 'America/Toronto';
   const badDays = new Set();
@@ -1591,11 +1661,13 @@ function getBadWeatherDays(forecast) {
     const rainProb  = (item.pop || 0) * 100;
     const temp      = item.main?.temp ?? 99;
     const weather   = item.weather?.[0]?.main?.toLowerCase() || '';
+    const windKmh   = (item.wind?.speed || 0) * 3.6;
     const hasSnow   = weather === 'snow' || (item.snow?.['3h'] ?? 0) > 0;
     const hasFrost  = temp < 2;
     const hasRain   = rainProb > 60;
+    const hasWind   = windKmh > 50;
 
-    if (hasSnow || hasFrost || hasRain) badDays.add(date);
+    if (hasSnow || hasFrost || hasRain || hasWind) badDays.add(date);
   }
   return badDays;
 }
@@ -1689,9 +1761,30 @@ async function checkWeatherAlerts(slackClient, channelId) {
     if (!forecast) return;
 
     const badDays = getBadWeatherDays(forecast);
-    if (badDays.size === 0) { console.log('Weather check: no bad days in forecast'); return; }
+    const today   = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
 
-    // Tasks in stages 2–4 with scheduled dates on bad days
+    // ── Load previously alerted task+date combos from bot_memory ──
+    const { data: existingAlerts } = await sb
+      .from('bot_memory')
+      .select('key, value')
+      .eq('category', 'weather_alert');
+
+    const alertedKeys = new Set((existingAlerts || []).map(a => a.key));
+
+    // Clean up past-date entries (date already gone — no longer relevant)
+    const staleKeys = (existingAlerts || [])
+      .filter(a => {
+        const parts = a.key.split(':');
+        const date  = parts[parts.length - 1]; // key format: taskId:YYYY-MM-DD
+        return date < today;
+      })
+      .map(a => a.key);
+
+    if (staleKeys.length) {
+      await sb.from('bot_memory').delete().eq('category', 'weather_alert').in('key', staleKeys);
+    }
+
+    // ── Fetch active outdoor tasks ──
     const { data: tasks } = await sb
       .from('tasks')
       .select('id, name, task_stage, assignees, start_date, due_date, lineage, weather_dependent')
@@ -1703,44 +1796,99 @@ async function checkWeatherAlerts(slackClient, channelId) {
       const partialOutdoor = PARTIAL_OUTDOOR_LINEAGES.includes(task.lineage) && task.weather_dependent === 'yes';
       if (!fullOutdoor && !partialOutdoor) continue;
 
-      const hits = [task.start_date, task.due_date].filter(d => d && badDays.has(d));
+      const hits = [task.start_date, task.due_date].filter(d => d && d >= today && badDays.has(d));
       if (hits.length) atRisk.push({ task, badDates: hits });
     }
 
-    if (!atRisk.length) { console.log('Weather check: no at-risk tasks'); return; }
+    // ── Separate new conflicts from already-alerted ones ──
+    const newAlerts = [];
+    const currentKeys = new Set();
 
-    // Group tasks by bad day for the Slack message
-    const byDay = {};
     for (const { task, badDates } of atRisk) {
       for (const d of badDates) {
-        if (!byDay[d]) byDay[d] = [];
-        byDay[d].push(task);
+        const key = `${task.id}:${d}`;
+        currentKeys.add(key);
+        if (!alertedKeys.has(key)) {
+          newAlerts.push({ task, date: d });
+          await sb.from('bot_memory').upsert(
+            {
+              category:   'weather_alert',
+              key,
+              value:      JSON.stringify({ taskName: task.name, date: d, alertedAt: new Date().toISOString() }),
+              source:     'weather check',
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'category,key' }
+          );
+        }
       }
     }
 
-    const lines = Object.keys(byDay).sort().map(day => {
-      const label = new Date(day + 'T12:00:00Z').toLocaleDateString('en-US', {
-        timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric',
+    // ── Find all-clears: previously alerted combos no longer in badDays ──
+    const allClears = (existingAlerts || []).filter(a => {
+      const parts = a.key.split(':');
+      const date  = parts[parts.length - 1];
+      return date >= today && !currentKeys.has(a.key) && !staleKeys.includes(a.key);
+    });
+
+    // ── Post new alerts ──
+    if (newAlerts.length) {
+      const byDay = {};
+      for (const { task, date } of newAlerts) {
+        (byDay[date] = byDay[date] || []).push(task);
+      }
+      const lines = Object.keys(byDay).sort().map(day => {
+        const label = new Date(day + 'T17:00:00Z').toLocaleDateString('en-US', {
+          timeZone: 'America/Toronto', weekday: 'long', month: 'short', day: 'numeric',
+        });
+        const taskLines = byDay[day].map(t =>
+          `  • *${t.name}* · 👤 ${t.assignees?.join(', ') || 'unassigned'}`
+        ).join('\n');
+        return `🌧 *Weather alert — ${label}*\n${taskLines}`;
       });
-      const taskLines = byDay[day].map(t => {
-        const who = t.assignees?.join(', ') || 'unassigned';
-        return `  • *${t.name}* · 👤 ${who}`;
-      }).join('\n');
-      return `🌧 *Weather alert — ${label}*\n${taskLines}`;
-    });
+      await slackClient.chat.postMessage({
+        channel: channelId,
+        text: lines.join('\n\n') + '\n\n_Reply "reschedule [task name]" to push dates._',
+      });
+      console.log(`Weather alert sent — ${newAlerts.length} new conflict(s)`);
+    } else {
+      console.log('Weather check: no new conflicts (deduplication active)');
+    }
 
-    await slackClient.chat.postMessage({
-      channel: channelId,
-      text: lines.join('\n\n') + '\n\n_Reply "reschedule [task name]" to push dates, or manage in the app._',
-    });
+    // ── Post all-clears ──
+    if (allClears.length) {
+      const clearLines = allClears.map(a => {
+        try {
+          const { taskName, date } = JSON.parse(a.value);
+          const label = new Date(date + 'T17:00:00Z').toLocaleDateString('en-US', {
+            timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+          });
+          return `  • *${taskName}* — ${label} now looks clear`;
+        } catch { return null; }
+      }).filter(Boolean);
 
-    // Record the check time in bot_memory
+      if (clearLines.length) {
+        await slackClient.chat.postMessage({
+          channel: channelId,
+          text: `☀️ *Weather cleared:*\n${clearLines.join('\n')}`,
+        });
+      }
+
+      // Remove cleared alerts from bot_memory
+      await sb.from('bot_memory')
+        .delete()
+        .eq('category', 'weather_alert')
+        .in('key', allClears.map(a => a.key));
+
+      console.log(`All-clear posted for ${allClears.length} task(s)`);
+    }
+
+    // ── Record check time ──
     await sb.from('bot_memory').upsert(
       { category: 'config', key: 'last_weather_check', value: new Date().toISOString(),
         source: 'auto', updated_at: new Date().toISOString() },
       { onConflict: 'category,key' }
     );
-    console.log(`Weather alert sent — ${atRisk.length} tasks at risk across ${Object.keys(byDay).length} bad day(s)`);
   } catch (e) {
     console.error('Weather check error:', e.message);
   }
@@ -1748,8 +1896,8 @@ async function checkWeatherAlerts(slackClient, channelId) {
 
 // ── SCHEDULING ───────────────────────────────────────────────
 
-// Returns array of { task, conflictDates, suggestedDate } for outdoor/weather-sensitive
-// tasks in stages 0–2 whose start_date falls on a bad weather day.
+// Returns array of { task, conflictDates, suggestedDate, hasStartConflict, hasDueConflict }
+// for outdoor/weather-sensitive tasks in stages 0–2 with start_date or due_date on a bad weather day.
 function getScheduleConflicts(tasks, badDays) {
   const conflicts = [];
   for (const task of tasks || []) {
@@ -1757,13 +1905,26 @@ function getScheduleConflicts(tasks, badDays) {
     const fullOutdoor    = OUTDOOR_LINEAGES.includes(task.lineage);
     const partialOutdoor = PARTIAL_OUTDOOR_LINEAGES.includes(task.lineage) && task.weather_dependent === 'yes';
     if (!fullOutdoor && !partialOutdoor) continue;
-    if (!task.start_date) continue;
 
-    const conflictDates = [task.start_date].filter(d => badDays.has(d));
-    if (!conflictDates.length) continue;
+    const hasStartConflict = !!(task.start_date && badDays.has(task.start_date));
+    const hasDueConflict   = !!(task.due_date   && badDays.has(task.due_date));
 
-    const suggestedDate = findNextClearDay(task.start_date, badDays);
-    conflicts.push({ task, conflictDates, suggestedDate });
+    // Check all working days the task spans — catches mid-task bad weather days
+    const span         = getTaskDateSpan(task.start_date, task.estimated_hours);
+    const spanBadDates = span.filter(d => badDays.has(d));
+    const hasSpanConflict = spanBadDates.length > 0;
+
+    if (!hasStartConflict && !hasDueConflict && !hasSpanConflict) continue;
+
+    const conflictDates = [...new Set([
+      hasStartConflict ? task.start_date : null,
+      ...spanBadDates,
+      hasDueConflict   ? task.due_date   : null,
+    ].filter(Boolean))];
+
+    // Suggest a new start_date only for start conflicts; due conflicts need human judgement
+    const suggestedDate = hasStartConflict ? findNextClearDay(task.start_date, badDays) : null;
+    conflicts.push({ task, conflictDates, suggestedDate, hasStartConflict, hasDueConflict, hasSpanConflict });
   }
   return conflicts;
 }
@@ -1837,32 +1998,58 @@ async function handleRescheduleCommand(slackUserId, taskNameHint, say) {
     return;
   }
 
-  const conflictDates = [task.start_date].filter(d => badDays.has(d));
-  if (!conflictDates.length) {
-    const lbl = new Date(task.start_date + 'T17:00:00Z').toLocaleDateString('en-US', {
-      timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
-    });
-    await say(`No weather conflict on *${task.name}*'s scheduled date (${lbl}) — looks clear.`);
+  const hasStartConflict = !!(task.start_date && badDays.has(task.start_date));
+  const hasDueConflict   = !!(task.due_date   && badDays.has(task.due_date));
+
+  if (!hasStartConflict && !hasDueConflict) {
+    const dates = [task.start_date, task.due_date].filter(Boolean).map(d =>
+      new Date(d + 'T17:00:00Z').toLocaleDateString('en-US', {
+        timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+      })
+    ).join(' / ');
+    await say(`No weather conflict on *${task.name}*'s dates (${dates || 'none set'}) — looks clear.`);
     return;
   }
 
-  const suggestedDate = findNextClearDay(task.start_date, badDays);
-  const conflictLbl = new Date(conflictDates[0] + 'T17:00:00Z').toLocaleDateString('en-US', {
-    timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
-  });
-  const suggestLbl = suggestedDate
-    ? new Date(suggestedDate + 'T17:00:00Z').toLocaleDateString('en-US', {
-        timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
-      })
-    : null;
+  // ── Start date conflict — suggest moving start ──
+  if (hasStartConflict) {
+    const suggestedDate = findNextClearDay(task.start_date, badDays);
+    const conflictLbl   = new Date(task.start_date + 'T17:00:00Z').toLocaleDateString('en-US', {
+      timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+    });
+    const suggestLbl = suggestedDate
+      ? new Date(suggestedDate + 'T17:00:00Z').toLocaleDateString('en-US', {
+          timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+        })
+      : null;
 
-  rescheduleSession.set(slackUserId, { task, suggestedDate });
+    rescheduleSession.set(slackUserId, { task, suggestedDate, field: 'start_date' });
 
-  const prompt = suggestedDate
-    ? `Move to *${suggestLbl}* (${suggestedDate})? Reply \`yes\`, a different date, or \`skip\`.`
-    : `No clear day found in the next 2 weeks. Reply with a date to move it to, or \`skip\`.`;
+    const prompt = suggestedDate
+      ? `Move start to *${suggestLbl}* (${suggestedDate})? Reply \`yes\`, a different date, or \`skip\`.`
+      : `No clear day found in the next 2 weeks. Reply with a date, or \`skip\`.`;
+    await say(`⛈ Bad weather on *${conflictLbl}* blocks the start of *${task.name}*. ${prompt}`);
+    return;
+  }
 
-  await say(`⛈ Bad weather on *${conflictLbl}* blocks *${task.name}*. ${prompt}`);
+  // ── Due date conflict only — can't auto-suggest, needs human decision ──
+  if (hasDueConflict) {
+    const dueLbl = new Date(task.due_date + 'T17:00:00Z').toLocaleDateString('en-US', {
+      timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+    });
+    const nextClear = findNextClearDay(task.due_date, badDays);
+    const nextLbl   = nextClear
+      ? new Date(nextClear + 'T17:00:00Z').toLocaleDateString('en-US', {
+          timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+        })
+      : null;
+
+    rescheduleSession.set(slackUserId, { task, suggestedDate: nextClear, field: 'due_date' });
+
+    const options = nextClear
+      ? `Reply \`yes\` to extend due date to *${nextLbl}*, a different date, or \`skip\`.`
+      : `Reply with a new due date or \`skip\`.`;
+    await say(`⛈ Due date for *${task.name}* falls on bad weather (*${dueLbl}*). The task itself may need to start earlier or the deadline may need to move. ${options}`);
 }
 
 // Handles the yes/date/skip reply to a pending reschedule prompt.
@@ -1888,7 +2075,11 @@ async function handleRescheduleReply(slackUserId, text, say) {
     return;
   }
 
-  const { error } = await sb.from('tasks').update({ start_date: newDate }).eq('id', session.task.id);
+  const field    = session.field || 'start_date';
+  const oldDate  = field === 'due_date' ? session.task.due_date : session.task.start_date;
+  const fieldLbl = field === 'due_date' ? 'Due date' : 'Start date';
+
+  const { error } = await sb.from('tasks').update({ [field]: newDate }).eq('id', session.task.id);
   if (error) {
     console.error('reschedule update error:', error.message);
     await say(`Hit an error updating *${session.task.name}* — check Render logs.`);
@@ -1899,7 +2090,7 @@ async function handleRescheduleReply(slackUserId, text, say) {
   await sb.from('task_updates').insert({
     task_id: session.task.id,
     author:  'Task Bot',
-    text:    `Start date rescheduled from ${session.task.start_date} to ${newDate} due to weather conflict.`,
+    text:    `${fieldLbl} rescheduled from ${oldDate} to ${newDate} due to weather conflict.`,
     date:    todayISO(),
     via:     'Slack Bot',
   });
@@ -1909,7 +2100,7 @@ async function handleRescheduleReply(slackUserId, text, say) {
   const newLbl = new Date(newDate + 'T17:00:00Z').toLocaleDateString('en-US', {
     timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
   });
-  await say(`✅ *${session.task.name}* rescheduled to ${newLbl}.`);
+  await say(`✅ *${session.task.name}* — ${fieldLbl} moved to ${newLbl}.`);
 }
 
 // On-demand `schedule` command — today's recommended tasks per worker + weather conflicts.
@@ -1951,7 +2142,14 @@ async function handleScheduleCommand(say) {
       }
     }
 
+    // Worker load for today
+    const todayLoad = getWorkerLoad(tasks, today);
+
     const sections = Object.entries(byWorker).map(([worker, workerTasks]) => {
+      const load     = todayLoad[worker] || 0;
+      const loadNote = load > 0
+        ? ` _(${load}h${load > 8 ? ' ⚠️ overloaded' : ''})_`
+        : ' _(nothing scheduled today)_';
       const lines = workerTasks.slice(0, 5).map(t => {
         const pri     = PRIORITY_EMOJI_MAP[t.priority] || '⚪';
         const badge   = STAGE_BADGE[t.task_stage] || '';
@@ -1962,7 +2160,7 @@ async function handleScheduleCommand(say) {
         const overdue = t.due_date && t.due_date < today ? ' 🔔 overdue' : '';
         return `> ${pri} ${badge}*${t.name}*${wFlag}${hrs}${overdue}`;
       });
-      return `*${worker}*\n${lines.join('\n')}`;
+      return `*${worker}*${loadNote}\n${lines.join('\n')}`;
     });
 
     if (unassigned.length) {
@@ -1972,9 +2170,11 @@ async function handleScheduleCommand(say) {
     // Upcoming conflicts
     const conflicts = getScheduleConflicts(tasks, badDays);
     const conflictNote = conflicts.length
-      ? `\n\n⚠️ *Upcoming weather conflicts:*\n${conflicts.map(c =>
-          `  • *${c.task.name}* — scheduled ${c.conflictDates[0]}${c.suggestedDate ? `, suggest ${c.suggestedDate}` : ''}`
-        ).join('\n')}\n_Say "reschedule [task name]" to push dates._`
+      ? `\n\n⚠️ *Upcoming weather conflicts:*\n${conflicts.map(c => {
+          const spanNote = c.hasSpanConflict && !c.hasStartConflict ? ' _(mid-task)_' : '';
+          const suggest  = c.suggestedDate ? `, suggest ${c.suggestedDate}` : '';
+          return `  • *${c.task.name}*${spanNote} — ${c.conflictDates.join(', ')}${suggest}`;
+        }).join('\n')}\n_Say "reschedule [task name]" or "reschedule all [date]" to push dates._`
       : '';
 
     const dateLabel = new Date(today + 'T17:00:00Z').toLocaleDateString('en-US', {
@@ -2021,7 +2221,13 @@ async function postDailyDigest(slackClient, channelId) {
       }
     }
 
+    const todayLoad = getWorkerLoad(tasks, today);
+
     const sections = Object.entries(byWorker).map(([worker, workerTasks]) => {
+      const load     = todayLoad[worker] || 0;
+      const loadNote = load > 0
+        ? ` _(${load}h${load > 8 ? ' ⚠️ overloaded' : ''})_`
+        : ' _(nothing scheduled today)_';
       const lines = workerTasks.slice(0, 5).map(t => {
         const pri     = PRIORITY_EMOJI_MAP[t.priority] || '⚪';
         const badge   = STAGE_BADGE[t.task_stage] || '';
@@ -2032,7 +2238,7 @@ async function postDailyDigest(slackClient, channelId) {
         const overdue = t.due_date && t.due_date < today ? ' 🔔' : '';
         return `> ${pri} ${badge}*${t.name}*${wFlag}${hrs}${overdue}`;
       });
-      return `*${worker}*\n${lines.join('\n')}`;
+      return `*${worker}*${loadNote}\n${lines.join('\n')}`;
     });
 
     if (unassigned.length) {
@@ -2041,9 +2247,11 @@ async function postDailyDigest(slackClient, channelId) {
 
     const conflicts = getScheduleConflicts(tasks, badDays);
     const conflictNote = conflicts.length
-      ? `\n\n⚠️ *Upcoming weather conflicts (${conflicts.length}):*\n${conflicts.map(c =>
-          `  • *${c.task.name}* — scheduled ${c.conflictDates[0]}${c.suggestedDate ? `, suggest ${c.suggestedDate}` : ''}`
-        ).join('\n')}\n_Say "reschedule [task name]" to push dates._`
+      ? `\n\n⚠️ *Upcoming weather conflicts (${conflicts.length}):*\n${conflicts.map(c => {
+          const spanNote = c.hasSpanConflict && !c.hasStartConflict ? ' _(mid-task)_' : '';
+          const suggest  = c.suggestedDate ? `, suggest ${c.suggestedDate}` : '';
+          return `  • *${c.task.name}*${spanNote} — ${c.conflictDates.join(', ')}${suggest}`;
+        }).join('\n')}\n_Say "reschedule [task name]" or "reschedule all [date]" to push dates._`
       : '';
 
     const dateLabel = new Date(today + 'T17:00:00Z').toLocaleDateString('en-US', {
@@ -2059,6 +2267,185 @@ async function postDailyDigest(slackClient, channelId) {
   } catch (e) {
     console.error('postDailyDigest error:', e.message);
   }
+}
+
+// ── WEEK VIEW ────────────────────────────────────────────────
+
+async function handleWeekCommand(say) {
+  try {
+    const TZ    = 'America/Toronto';
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+
+    const forecast = await fetchWeatherForecast();
+    const badDays  = forecast ? getBadWeatherDays(forecast) : new Set();
+
+    const weekDates = getNextWorkingDays(5);
+
+    const { data: tasks } = await sb
+      .from('tasks')
+      .select('id, name, task_stage, assignees, lineage, priority, start_date, due_date, estimated_hours, weather_dependent')
+      .not('stage', 'eq', 'complete')
+      .order('created_at', { ascending: true });
+
+    const activeTasks = (tasks || []).filter(t => t.task_stage < 7);
+    const PRIORITY_EMOJI_MAP = { urgent: '🔴', high: '🟠', medium: '🟡', low: '🟢' };
+
+    const dayBlocks = weekDates.map(date => {
+      const isBad   = badDays.has(date);
+      const isToday = date === today;
+      const dateLbl = new Date(date + 'T17:00:00Z').toLocaleDateString('en-US', {
+        timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric',
+      });
+      const weatherEmoji = isBad ? '🌧' : '☀️';
+      const todayMark    = isToday ? ' _(today)_' : '';
+      const header       = `*${dateLbl}${todayMark}* ${weatherEmoji}`;
+
+      // Tasks whose span includes this date
+      const dayTasks = activeTasks.filter(t =>
+        t.start_date && getTaskDateSpan(t.start_date, t.estimated_hours).includes(date)
+      );
+
+      if (!dayTasks.length) return `${header}\n> _Nothing scheduled_`;
+
+      // Worker load
+      const load    = getWorkerLoad(activeTasks, date);
+      const loadStr = Object.entries(load)
+        .map(([w, h]) => `${w}: ${h}h${h > 8 ? ' ⚠️' : ''}`)
+        .join(' · ');
+
+      const taskLines = dayTasks.map(t => {
+        const pri     = PRIORITY_EMOJI_MAP[t.priority] || '⚪';
+        const isOut   = OUTDOOR_LINEAGES.includes(t.lineage) ||
+          (PARTIAL_OUTDOOR_LINEAGES.includes(t.lineage) && t.weather_dependent === 'yes');
+        const wFlag   = isOut && isBad ? ' 🌧⚠️' : '';
+        const who     = t.assignees?.join(', ') || 'unassigned';
+        const hrs     = t.estimated_hours ? ` · ${t.estimated_hours}h` : '';
+        const contd   = t.start_date !== date ? ' _(cont\'d)_' : '';
+        return `> ${pri} *${t.name}*${contd} · ${who}${hrs}${wFlag}`;
+      });
+
+      return [header, loadStr ? `> 👷 ${loadStr}` : null, ...taskLines]
+        .filter(Boolean).join('\n');
+    });
+
+    // Tasks with no start_date set (stages 0–2 only — unscheduled)
+    const unscheduled = activeTasks.filter(t => !t.start_date && t.task_stage <= 2);
+    const unscheduledNote = unscheduled.length
+      ? `\n\n⚠️ *${unscheduled.length} task${unscheduled.length > 1 ? 's' : ''} with no start date:*\n` +
+        unscheduled.slice(0, 6).map(t => `> ⚪ *${t.name}*`).join('\n')
+      : '';
+
+    const firstLbl = new Date(weekDates[0] + 'T17:00:00Z')
+      .toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric' });
+    const lastLbl  = new Date(weekDates[weekDates.length - 1] + 'T17:00:00Z')
+      .toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric' });
+
+    await say(`📅 *Week — ${firstLbl}–${lastLbl}*\n\n${dayBlocks.join('\n\n')}${unscheduledNote}`);
+  } catch (e) {
+    console.error('week command error:', e.message);
+    await say(`Week view failed: ${e.message}`);
+  }
+}
+
+// ── BATCH RESCHEDULE ─────────────────────────────────────────
+
+// Finds all unstarted outdoor tasks starting on targetDate and proposes moving them together.
+async function handleBatchRescheduleCommand(slackUserId, dateArg, say) {
+  const targetDate = parseDate(dateArg);
+  if (!targetDate) {
+    await say(`Couldn't read that date — try "reschedule all May 15" or "reschedule all 2026-05-15".`);
+    return;
+  }
+
+  const forecast = await fetchWeatherForecast();
+  const badDays  = forecast ? getBadWeatherDays(forecast) : new Set();
+
+  const { data: tasks } = await sb
+    .from('tasks')
+    .select('id, name, task_stage, assignees, lineage, start_date, estimated_hours, weather_dependent')
+    .eq('start_date', targetDate)
+    .lte('task_stage', 2);
+
+  const atRisk = (tasks || []).filter(t => {
+    const fullOutdoor    = OUTDOOR_LINEAGES.includes(t.lineage);
+    const partialOutdoor = PARTIAL_OUTDOOR_LINEAGES.includes(t.lineage) && t.weather_dependent === 'yes';
+    return fullOutdoor || partialOutdoor;
+  });
+
+  const targetLbl = new Date(targetDate + 'T17:00:00Z').toLocaleDateString('en-US', {
+    timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+  });
+
+  if (!atRisk.length) {
+    await say(`No unstarted outdoor tasks with a start date of ${targetLbl}.`);
+    return;
+  }
+
+  const suggestedDate = findNextClearDay(targetDate, badDays);
+  const suggestLbl    = suggestedDate
+    ? new Date(suggestedDate + 'T17:00:00Z').toLocaleDateString('en-US', {
+        timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+      })
+    : null;
+
+  // Store session keyed by userId
+  const batchSession = { targetDate, tasks: atRisk, suggestedDate };
+  rescheduleSession.set(`batch:${slackUserId}`, batchSession);
+
+  const taskList = atRisk.map(t =>
+    `  • *${t.name}* · 👤 ${t.assignees?.join(', ') || 'unassigned'}`
+  ).join('\n');
+  const prompt = suggestedDate
+    ? `Move all to *${suggestLbl}* (${suggestedDate})? Reply \`yes\`, a different date, or \`skip\`.`
+    : `No clear day found in the next 2 weeks. Reply with a target date or \`skip\`.`;
+
+  await say(`⛈ *${atRisk.length} task${atRisk.length > 1 ? 's' : ''} on ${targetLbl}:*\n${taskList}\n\n${prompt}`);
+}
+
+// Handles the yes/date/skip reply to a pending batch reschedule.
+async function handleBatchRescheduleReply(slackUserId, text, say) {
+  const session = rescheduleSession.get(`batch:${slackUserId}`);
+  const t       = text.trim();
+
+  if (/^(skip|no|cancel|forget it|never mind)/i.test(t)) {
+    rescheduleSession.delete(`batch:${slackUserId}`);
+    await say(`Skipped — all tasks stay on ${session.targetDate}.`);
+    return;
+  }
+
+  let newDate = /^yes$/i.test(t) ? session.suggestedDate : parseDate(t);
+  if (!newDate) {
+    await say(`Didn't catch that date — try \`yes\`, a date like "May 20", or \`skip\`.`);
+    return;
+  }
+
+  const moved = [];
+  const failed = [];
+
+  for (const task of session.tasks) {
+    const { error } = await sb.from('tasks').update({ start_date: newDate }).eq('id', task.id);
+    if (error) {
+      failed.push(task.name);
+    } else {
+      moved.push(task.name);
+      await sb.from('task_updates').insert({
+        task_id: task.id,
+        author:  'Task Bot',
+        text:    `Start date moved from ${session.targetDate} to ${newDate} (batch reschedule — weather conflict).`,
+        date:    todayISO(),
+        via:     'Slack Bot',
+      });
+    }
+  }
+
+  rescheduleSession.delete(`batch:${slackUserId}`);
+
+  const newLbl = new Date(newDate + 'T17:00:00Z').toLocaleDateString('en-US', {
+    timeZone: 'America/Toronto', weekday: 'short', month: 'short', day: 'numeric',
+  });
+  let reply = `✅ *${moved.length} task${moved.length > 1 ? 's' : ''} moved to ${newLbl}:*\n${moved.map(n => `  • ${n}`).join('\n')}`;
+  if (failed.length) reply += `\n\n⚠️ Failed to move: ${failed.join(', ')} — check Render logs.`;
+  await say(reply);
 }
 
 // Resolve a channel name to its Slack channel ID.
