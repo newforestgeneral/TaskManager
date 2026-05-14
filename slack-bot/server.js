@@ -15,8 +15,7 @@ const app = new App({
 
 // Ignore Slack retry events — when the bot takes >3 s, Slack resends the
 // event. Without this, the handler runs twice and the user gets double replies.
-app.use(async ({ next, context, payload }) => {
-  console.log(`[DEBUG] Bolt event received — type: ${payload?.type} | event: ${payload?.event?.type} | retry: ${context.retryNum ?? 0}`);
+app.use(async ({ next, context }) => {
   if (context.retryNum) {
     console.log(`Slack retry #${context.retryNum} ignored`);
     return;
