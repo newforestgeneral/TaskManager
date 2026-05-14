@@ -2263,6 +2263,13 @@ async function postDailyDigest(slackClient, channelId) {
       text: `📅 *Good morning — ${dateLabel}*\n\n${weatherNote}${sections.join('\n\n')}${conflictNote}`,
     });
 
+    // Record digest date so the startup catch-up knows it already ran today
+    await sb.from('bot_memory').upsert(
+      { category: 'config', key: 'last_digest_date', value: today,
+        source: 'auto', updated_at: new Date().toISOString() },
+      { onConflict: 'category,key' }
+    );
+
     console.log(`Daily digest posted — ${Object.keys(byWorker).length} workers, ${ranked.length} tasks, ${conflicts.length} conflicts`);
   } catch (e) {
     console.error('postDailyDigest error:', e.message);
@@ -2497,6 +2504,26 @@ async function startScheduledChecks(slackClient) {
     }, msUntil);
   }
   scheduleNextDigest();
+
+  // ── Startup catch-up: post digest if missed due to restart/sleep ──
+  // If it's already past 7:30am Toronto and we haven't posted today's digest, do it now.
+  const TZ         = 'America/Toronto';
+  const nowStr     = new Date().toLocaleString('en-US', { timeZone: TZ });
+  const torontoNow = new Date(nowStr);
+  const todayStr   = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+  const isAfter730 = torontoNow.getHours() > 7 ||
+    (torontoNow.getHours() === 7 && torontoNow.getMinutes() >= 30);
+
+  if (isAfter730 && isWorkerAvailableOnDate(todayStr)) {
+    const { data: lastDigest } = await sb
+      .from('bot_memory').select('value')
+      .eq('category', 'config').eq('key', 'last_digest_date').limit(1);
+
+    if (lastDigest?.[0]?.value !== todayStr) {
+      console.log('Catch-up: digest not yet posted today — scheduling in 20s');
+      setTimeout(() => postDailyDigest(slackClient, channelId), 20_000);
+    }
+  }
 }
 
 // ── SLACK NAME → WORKER NAME RESOLVER ───────────────────────
@@ -2601,11 +2628,27 @@ async function saveMemories(newMemories, sourceText) {
   }
 }
 
+// ── SELF-PING (keeps Render free tier awake) ─────────────────
+// Render spins down free web services after 15 min of inactivity.
+// Pinging our own URL every 5 min prevents that.
+// RENDER_EXTERNAL_URL is set automatically by Render — not present in local dev.
+function startSelfPing() {
+  const url = process.env.RENDER_EXTERNAL_URL;
+  if (!url) { console.log('Self-ping skipped — RENDER_EXTERNAL_URL not set (local dev?)'); return; }
+  setInterval(async () => {
+    try { await fetch(url); }
+    catch (e) { console.error('Self-ping failed:', e.message); }
+  }, 5 * 60 * 1000); // every 5 minutes
+  console.log(`Self-ping armed — ${url} every 5 min`);
+}
+
 // ── START ─────────────────────────────────────────────────────
 (async () => {
   const port = process.env.PORT || 3000;
   await app.start(port);
   console.log(`Newforest Task Bot running on port ${port}`);
+
+  startSelfPing();
 
   // Kick off lapse + weather checks after bot is fully online
   await startScheduledChecks(app.client);
