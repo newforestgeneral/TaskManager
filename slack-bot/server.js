@@ -2050,6 +2050,8 @@ async function handleRescheduleCommand(slackUserId, taskNameHint, say) {
       ? `Reply \`yes\` to extend due date to *${nextLbl}*, a different date, or \`skip\`.`
       : `Reply with a new due date or \`skip\`.`;
     await say(`⛈ Due date for *${task.name}* falls on bad weather (*${dueLbl}*). The task itself may need to start earlier or the deadline may need to move. ${options}`);
+    return;
+  }
 }
 
 // Handles the yes/date/skip reply to a pending reschedule prompt.
