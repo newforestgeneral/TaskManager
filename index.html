@@ -279,8 +279,18 @@
       border-radius:var(--radius-md);box-shadow:var(--shadow-md);
       padding:14px 16px;width:380px;max-width:calc(100vw - 32px);z-index:350;
       max-height:calc(100vh - 80px);overflow-y:auto;-webkit-overflow-scrolling:touch}
-    .voice-panel-task{font-size:11px;font-weight:600;letter-spacing:0.4px;
-      text-transform:uppercase;color:var(--text-tertiary);margin-bottom:6px}
+    .voice-panel-header{border-radius:6px;padding:10px 12px;margin-bottom:12px}
+    .voice-panel-header.editing{background:var(--bg-tertiary);border:0.5px solid var(--border-md)}
+    .voice-panel-header.creating{background:#EEF0FF;border:0.5px solid #C7CAFF}
+    @media(prefers-color-scheme:dark){
+      .voice-panel-header.creating{background:#1E1E40;border-color:#4040A0}}
+    body.theme-dark .voice-panel-header.creating{background:#1E1E40;border-color:#4040A0}
+    body.theme-light .voice-panel-header.creating{background:#EEF0FF;border-color:#C7CAFF}
+    .voice-panel-action{font-size:11px;font-weight:600;letter-spacing:0.6px;
+      text-transform:uppercase;margin-bottom:3px}
+    .voice-panel-action.editing{color:var(--text-tertiary)}
+    .voice-panel-action.creating{color:var(--accent)}
+    .voice-panel-taskname{font-size:15px;font-weight:600;color:var(--text-primary);line-height:1.3}
     .voice-transcript{font-size:12px;color:var(--text-secondary);font-style:italic;
       margin-bottom:10px;line-height:1.5}
     .voice-diff{display:flex;flex-direction:column;gap:5px;margin-bottom:2px}
@@ -288,7 +298,10 @@
     .voice-diff-label{color:var(--text-tertiary);min-width:90px;flex-shrink:0}
     .voice-diff-val{color:var(--text-primary);font-weight:500}
     .voice-clarify{font-size:12px;color:#EF9F27;margin-bottom:8px}
-    .voice-error{display:flex;align-items:center;gap:8px;font-size:12px;color:#dc2626}
+    .voice-error{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#dc2626;
+      line-height:1.45;padding:10px 12px;background:#FEF2F2;border:0.5px solid #FECACA;border-radius:6px}
+    body.theme-dark .voice-error,.voice-error.dark{background:#3B1212;border-color:#7F2020}
+    @media(prefers-color-scheme:dark){.voice-error{background:#3B1212;border-color:#7F2020}}
     .update-textarea{width:100%;border:0.5px solid var(--border-md);border-radius:var(--radius-md);
       padding:8px 10px;font-size:13px;font-family:inherit;resize:none;
       background:var(--bg-primary);color:var(--text-primary);height:52px}
@@ -1361,7 +1374,19 @@ async function startVoiceInput(){
     setVoiceBtn('recording');
   }catch(err){
     console.error('Mic access:',err);
-    alert('Could not access microphone. Please allow mic permissions and try again.');
+    const name=err.name||'';
+    let msg='Could not access microphone.';
+    if(name==='NotAllowedError'||name==='PermissionDeniedError')
+      msg='Microphone permission denied. Tap the lock icon in your browser address bar and allow mic access, then try again.';
+    else if(name==='NotFoundError'||name==='DevicesNotFoundError')
+      msg='No microphone found. Make sure a mic is connected and not in use by another app.';
+    else if(name==='NotReadableError'||name==='TrackStartError')
+      msg='Microphone is in use by another app. Close other apps using the mic and try again.';
+    else if(name==='OverconstrainedError')
+      msg='Microphone does not meet requirements. Try a different device.';
+    else if(name==='SecurityError')
+      msg='Microphone access blocked — this page must be served over HTTPS.';
+    renderVoiceError(msg);
   }
 }
 
@@ -1404,9 +1429,30 @@ async function processVoiceInput(mimeType){
       headers:{'Authorization':`Bearer ${SUPABASE_KEY}`},
       body:fd
     });
-    if(!res.ok)throw new Error(`Server error ${res.status}`);
+    if(!res.ok){
+      let errMsg;
+      try{const j=await res.json();errMsg=j.error||j.message;}catch{}
+      if(res.status===401||res.status===403)
+        throw new Error('Voice function not authorised. Check the Supabase edge function secrets (DEEPGRAM_API_KEY, ANTHROPIC_API_KEY).');
+      else if(res.status===404)
+        throw new Error('Voice function not found. Deploy it with: supabase functions deploy voice-parse');
+      else if(res.status===500)
+        throw new Error(errMsg?`Voice function error: ${errMsg}`:'Voice function crashed. Check Supabase edge function logs for details.');
+      else
+        throw new Error(errMsg||`Unexpected server error (${res.status}).`);
+    }
     const result=await res.json();
-    if(result.error)throw new Error(result.error);
+    if(result.error){
+      const raw=result.error;
+      let friendly=raw;
+      if(raw.includes('No speech detected'))
+        friendly='No speech detected — the recording may have been too short or silent. Try again.';
+      else if(raw.toLowerCase().includes('deepgram'))
+        friendly=`Transcription failed: ${raw}. Check the DEEPGRAM_API_KEY secret.`;
+      else if(raw.toLowerCase().includes('anthropic'))
+        friendly=`AI parsing failed: ${raw}. Check the ANTHROPIC_API_KEY secret.`;
+      throw new Error(friendly);
+    }
     voicePendingResult=result;
     setVoiceBtn('idle');
     renderVoicePreview(result);
@@ -1433,11 +1479,18 @@ function renderVoicePreview(result){
   if(!el)return;
   el.style.display='block';
   const isNew=!result.target_task_id;
+  const taskName=isNew
+    ?(result.edits?.name||result.target_task_name||'Untitled task')
+    :(result.target_task_name||'Unknown task');
   const taskLabel=isNew
-    ?`<div class="voice-panel-task" style="color:var(--accent)">+ New task</div>`
-    :result.target_task_name
-      ?`<div class="voice-panel-task">→ ${escHtml(result.target_task_name)}</div>`
-      :'';
+    ?`<div class="voice-panel-header creating">
+        <div class="voice-panel-action creating">Creating new task</div>
+        <div class="voice-panel-taskname">${escHtml(taskName)}</div>
+      </div>`
+    :`<div class="voice-panel-header editing">
+        <div class="voice-panel-action editing">Editing task</div>
+        <div class="voice-panel-taskname">${escHtml(taskName)}</div>
+      </div>`;
   if(result.ambiguous){
     el.innerHTML=`${taskLabel}
       <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
@@ -1477,8 +1530,8 @@ function renderVoiceError(msg){
   const el=document.getElementById('voicePanel');
   if(!el)return;
   el.style.display='block';
-  el.innerHTML=`<div class="voice-error">⚠ ${escHtml(msg)}</div>
-    <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-top:8px" onclick="clearVoicePreview()">Dismiss</button>`;
+  el.innerHTML=`<div class="voice-error"><span style="flex-shrink:0">⚠</span><span>${escHtml(msg)}</span></div>
+    <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-top:10px" onclick="clearVoicePreview()">Dismiss</button>`;
 }
 
 function clearVoicePreview(){
