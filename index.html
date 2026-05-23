@@ -339,15 +339,37 @@
     .form-input.err{border-color:#E24B4A}
     .form-textarea{resize:vertical;min-height:72px}
     .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .assignee-picker{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;min-height:32px}
-    .assignee-chip{display:flex;align-items:center;gap:6px;padding:5px 10px 5px 6px;
-      border:0.5px solid var(--border-md);border-radius:999px;cursor:pointer;
-      font-size:13px;color:var(--text-secondary);transition:all 0.12s;user-select:none}
-    .assignee-chip:hover{background:var(--bg-secondary)}
-    .assignee-chip.selected{background:var(--bg-tertiary);border-color:var(--accent);color:var(--text-primary);font-weight:500}
-    .assignee-chip input[type=checkbox]{display:none}
+    /* Assignee dropdown */
+    .assignee-dropdown{position:relative}
+    .assignee-dd-trigger{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;
+      padding:5px 10px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);
+      background:var(--bg-primary);color:var(--text-primary);cursor:pointer;
+      font-family:inherit;font-size:13px;text-align:left;transition:border-color 0.15s}
+    .assignee-dd-trigger:hover,.assignee-dd-trigger.open{border-color:var(--accent)}
+    .assignee-dd-chips{display:flex;flex-wrap:wrap;gap:4px;flex:1;pointer-events:none}
+    .assignee-dd-placeholder{color:var(--text-tertiary);font-size:13px}
+    .assignee-dd-sel-chip{display:flex;align-items:center;gap:4px;padding:2px 7px 2px 3px;
+      background:var(--bg-tertiary);border-radius:999px;font-size:12px;font-weight:500;
+      color:var(--text-primary)}
+    .assignee-dd-caret{color:var(--text-tertiary);font-size:10px;flex-shrink:0;margin-left:2px}
+    .assignee-dd-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:600;
+      background:var(--bg-primary);border:0.5px solid var(--border-md);
+      border-radius:var(--radius-md);box-shadow:var(--shadow-md);
+      max-height:220px;overflow-y:auto;display:none}
+    .assignee-dd-group{padding:7px 12px 3px;font-size:10px;font-weight:600;letter-spacing:0.6px;
+      text-transform:uppercase;color:var(--text-tertiary);border-top:0.5px solid var(--border)}
+    .assignee-dd-group:first-child{border-top:none}
+    .assignee-dd-item{display:flex;align-items:center;gap:9px;padding:8px 12px;
+      cursor:pointer;transition:background 0.1s;user-select:none}
+    .assignee-dd-item:hover{background:var(--bg-secondary)}
+    .assignee-dd-item.checked{background:var(--bg-tertiary)}
+    .assignee-dd-item input[type=checkbox]{display:none}
     .chip-av{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;
       justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+    .chip-tag{font-size:9px;font-weight:600;letter-spacing:0.4px;padding:1px 5px;
+      border-radius:999px;background:#FFF3CD;color:#856404;border:0.5px solid #FFD97D;flex-shrink:0}
+    body.theme-dark .chip-tag{background:#3A2800;color:#FFD97D;border-color:#7A5500}
+    @media(prefers-color-scheme:dark){.chip-tag{background:#3A2800;color:#FFD97D;border-color:#7A5500}}
     .form-section-label{font-size:11px;font-weight:600;text-transform:uppercase;
       letter-spacing:0.5px;color:var(--text-tertiary);margin:18px 0 10px;
       padding-top:14px;border-top:0.5px solid var(--border)}
@@ -543,6 +565,8 @@
   <button class="user-dd-item" id="themeToggleBtn" onclick="toggleTheme()">
     <span id="themeToggleLabel">Dark mode</span>
   </button>
+  <div class="user-dd-section manager-only">Team</div>
+  <button class="user-dd-item manager-only" onclick="closeUserMenu();openContractorModal()">Manage contractors</button>
   <div class="user-dd-section">Account</div>
   <button class="user-dd-item" onclick="closeUserMenu();openPwdModal()">Change password</button>
   <button class="user-dd-item signout" onclick="closeUserMenu();signOut()">Sign out</button>
@@ -793,7 +817,16 @@
 
       <div class="form-group">
         <label class="form-label">Assigned to</label>
-        <div class="assignee-picker" id="fAssigneesWrap"></div>
+        <div class="assignee-dropdown" id="fAssigneesWrap">
+          <button type="button" class="assignee-dd-trigger" id="assigneeDdTrigger"
+            onclick="toggleAssigneeDropdown(event)">
+            <div class="assignee-dd-chips" id="assigneeDdChips">
+              <span class="assignee-dd-placeholder">No assignees</span>
+            </div>
+            <span class="assignee-dd-caret">▾</span>
+          </button>
+          <div class="assignee-dd-menu" id="assigneeDdMenu"></div>
+        </div>
       </div>
 
       <div class="form-group">
@@ -1046,9 +1079,15 @@ async function loadData(){
   render();
 }
 async function loadProfiles(){
-  const{data,error}=await sb.from('profiles').select('id,name,role').order('name');
-  if(error){console.error('loadProfiles:',error);return;}
-  allProfiles=data||[];
+  const[{data:pData,error:pErr},{data:cData,error:cErr}]=await Promise.all([
+    sb.from('profiles').select('id,name,role').order('name'),
+    sb.from('contractors').select('id,name').order('name')
+  ]);
+  if(pErr)console.error('loadProfiles:',pErr);
+  if(cErr)console.error('loadContractors:',cErr);
+  const profiles=(pData||[]);
+  const contractors=(cData||[]).map(c=>({...c,role:'contractor',isContractor:true}));
+  allProfiles=[...profiles,...contractors].sort((a,b)=>a.name.localeCompare(b.name));
 }
 
 // ── RENDER ──
@@ -1677,25 +1716,67 @@ function getSteps(){return[...document.querySelectorAll('#stepsWrap .dyn-row inp
 function getMats(){return[...document.querySelectorAll('#matsWrap .dyn-row')].map(r=>({name:r.querySelector('input').value.trim(),type:r.querySelector('select').value})).filter(m=>m.name);}
 
 function populateAssigneePicker(selected=[]){
-  const wrap=document.getElementById('fAssigneesWrap');
-  if(!wrap)return;
-  if(!allProfiles.length){
-    wrap.innerHTML='<span style="font-size:12px;color:var(--text-tertiary)">No users found</span>';
+  const menu=document.getElementById('assigneeDdMenu');
+  if(!menu)return;
+  const users=allProfiles.filter(p=>!p.isContractor).sort((a,b)=>a.name.localeCompare(b.name));
+  const contractors=allProfiles.filter(p=>p.isContractor).sort((a,b)=>a.name.localeCompare(b.name));
+  let html='';
+  if(users.length){
+    html+=`<div class="assignee-dd-group">Team</div>`;
+    html+=users.map(p=>_ddItem(p,selected)).join('');
+  }
+  if(contractors.length){
+    html+=`<div class="assignee-dd-group">Contractors</div>`;
+    html+=contractors.map(p=>_ddItem(p,selected)).join('');
+  }
+  if(!html)html=`<div style="padding:10px 12px;font-size:13px;color:var(--text-tertiary)">No people found</div>`;
+  menu.innerHTML=html;
+  _updateAssigneeTrigger(selected);
+}
+function _ddItem(p,selected){
+  const isSel=selected.includes(p.name);
+  const c=avColor(p.name);
+  const tag=p.isContractor?`<span class="chip-tag" style="margin-left:auto">C</span>`:'';
+  return`<label class="assignee-dd-item${isSel?' checked':''}" onclick="event.stopPropagation()">
+    <input type="checkbox" value="${escHtml(p.name)}" ${isSel?'checked':''}
+      onchange="this.closest('.assignee-dd-item').classList.toggle('checked',this.checked);_updateAssigneeTrigger()">
+    <span class="chip-av" style="background:${c.bg};color:${c.fg};width:26px;height:26px;font-size:11px;flex-shrink:0">${initials(p.name)}</span>
+    <span style="flex:1;font-size:13px">${escHtml(p.name)}</span>${tag}
+  </label>`;
+}
+function _updateAssigneeTrigger(sel){
+  const chipsEl=document.getElementById('assigneeDdChips');
+  if(!chipsEl)return;
+  const names=sel||getAssignees();
+  if(!names.length){
+    chipsEl.innerHTML='<span class="assignee-dd-placeholder">No assignees</span>';
     return;
   }
-  wrap.innerHTML=allProfiles.map(p=>{
-    const isSel=selected.includes(p.name);
-    const c=avColor(p.name);
-    return`<label class="assignee-chip${isSel?' selected':''}">
-      <input type="checkbox" value="${escHtml(p.name)}" ${isSel?'checked':''}
-        onchange="this.closest('.assignee-chip').classList.toggle('selected',this.checked)">
-      <span class="chip-av" style="background:${c.bg};color:${c.fg}">${initials(p.name)}</span>
-      ${escHtml(p.name)}
-    </label>`;
+  chipsEl.innerHTML=names.map(name=>{
+    const c=avColor(name);
+    return`<span class="assignee-dd-sel-chip">
+      <span class="chip-av" style="background:${c.bg};color:${c.fg};width:18px;height:18px;font-size:9px;flex-shrink:0">${initials(name)}</span>
+      ${escHtml(name)}
+    </span>`;
   }).join('');
 }
+function toggleAssigneeDropdown(e){
+  e&&e.stopPropagation();
+  const menu=document.getElementById('assigneeDdMenu');
+  const trigger=document.getElementById('assigneeDdTrigger');
+  if(!menu)return;
+  const open=menu.style.display==='block';
+  menu.style.display=open?'none':'block';
+  trigger?.classList.toggle('open',!open);
+}
+function closeAssigneeDropdown(){
+  const menu=document.getElementById('assigneeDdMenu');
+  const trigger=document.getElementById('assigneeDdTrigger');
+  if(menu)menu.style.display='none';
+  if(trigger)trigger.classList.remove('open');
+}
 function getAssignees(){
-  return[...document.querySelectorAll('#fAssigneesWrap input[type=checkbox]:checked')].map(el=>el.value);
+  return[...document.querySelectorAll('#assigneeDdMenu input[type=checkbox]:checked')].map(el=>el.value);
 }
 
 function openModal(editing){
@@ -1995,6 +2076,7 @@ function closeUserMenu(){
 }
 document.addEventListener('click',e=>{
   if(!e.target.closest('#userDropdown'))closeUserMenu();
+  if(!e.target.closest('#fAssigneesWrap'))closeAssigneeDropdown();
 });
 // ── REALTIME ──
 function setupRealtime(){
@@ -2006,6 +2088,61 @@ function setupRealtime(){
       await loadData();if(openId)openDetail(openId);
     })
     .subscribe();
+}
+
+// ── CONTRACTOR MODAL ──
+function openContractorModal(){
+  document.getElementById('contractorModal').style.display='flex';
+  document.getElementById('contractorMsg').textContent='';
+  document.getElementById('contractorNameInput').value='';
+  renderContractorList();
+}
+function closeContractorModal(){
+  document.getElementById('contractorModal').style.display='none';
+}
+function renderContractorList(){
+  const list=document.getElementById('contractorList');
+  const contractors=allProfiles.filter(p=>p.isContractor);
+  if(!contractors.length){
+    list.innerHTML='<div style="font-size:13px;color:var(--text-tertiary);padding:4px 0">No contractors yet.</div>';
+    return;
+  }
+  list.innerHTML=contractors.map(p=>{
+    const c=avColor(p.name);
+    return`<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;
+        border-radius:var(--radius-md);border:0.5px solid var(--border)">
+      <span style="width:28px;height:28px;border-radius:50%;background:${c.bg};color:${c.fg};
+        display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${initials(p.name)}</span>
+      <span style="flex:1;font-size:13px">${escHtml(p.name)}</span>
+      <span class="chip-tag">Contractor</span>
+      <button onclick="deleteContractor('${p.id}')" style="border:none;background:transparent;color:var(--text-tertiary);
+        cursor:pointer;font-size:16px;padding:0 2px;line-height:1" title="Remove">×</button>
+    </div>`;
+  }).join('');
+}
+async function addContractor(){
+  const input=document.getElementById('contractorNameInput');
+  const msg=document.getElementById('contractorMsg');
+  const name=input.value.trim();
+  if(!name){msg.textContent='Please enter a name.';return;}
+  if(allProfiles.some(p=>p.name.toLowerCase()===name.toLowerCase())){
+    msg.textContent='A person with that name already exists.';return;
+  }
+  const{data,error}=await sb.from('contractors').insert({name}).select().single();
+  if(error){console.error('addContractor:',error);msg.textContent='Error saving. Try again.';return;}
+  msg.textContent='';
+  input.value='';
+  await loadProfiles();
+  renderContractorList();
+  populateAssigneePicker(getAssignees());
+}
+async function deleteContractor(id){
+  if(!confirm('Remove this contractor? They will be removed from the assignee list.'))return;
+  const{error}=await sb.from('contractors').delete().eq('id',id);
+  if(error){console.error('deleteContractor:',error);return;}
+  await loadProfiles();
+  renderContractorList();
+  populateAssigneePicker(getAssignees());
 }
 
 // ── PASSWORD MODAL ──
@@ -2064,6 +2201,24 @@ initAuth();
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn-secondary" onclick="closePwdModal()">Cancel</button>
       <button class="btn-primary" onclick="savePwd()">Save password</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONTRACTOR MODAL -->
+<div id="contractorModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:3000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-primary);border-radius:var(--radius-lg);padding:24px;width:360px;max-height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow-md)">
+    <div style="font-size:15px;font-weight:600;margin-bottom:4px">Manage Contractors</div>
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">Contractors can be assigned to tasks but don't have a login.</div>
+    <div id="contractorList" style="flex:1;overflow-y:auto;margin-bottom:16px;display:flex;flex-direction:column;gap:6px;min-height:40px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <input class="login-input" type="text" id="contractorNameInput" placeholder="Contractor name"
+        style="flex:1;margin:0" onkeydown="if(event.key==='Enter')addContractor()" />
+      <button class="btn-primary" onclick="addContractor()" style="white-space:nowrap">Add</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:12px" id="contractorMsg"></div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn-secondary" onclick="closeContractorModal()">Done</button>
     </div>
   </div>
 </div>
