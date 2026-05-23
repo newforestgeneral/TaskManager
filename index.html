@@ -77,6 +77,9 @@
     .user-dd-info{padding:10px 13px;border-bottom:0.5px solid var(--border)}
     .user-dd-name{font-size:13px;font-weight:500}
     .user-dd-role{font-size:11px;color:var(--text-tertiary);margin-top:1px}
+    .user-dd-section{padding:6px 13px 3px;font-size:10px;font-weight:600;letter-spacing:0.6px;
+      text-transform:uppercase;color:var(--text-tertiary);border-top:0.5px solid var(--border);margin-top:2px}
+    .user-dd-section:first-of-type{border-top:none;margin-top:0}
     .user-dd-item{padding:9px 13px;font-size:13px;cursor:pointer;color:var(--text-secondary);
       display:block;width:100%;text-align:left;border:none;background:transparent;
       font-family:inherit;transition:background 0.1s}
@@ -274,7 +277,8 @@
     .voice-panel{position:fixed;top:50px;left:50%;transform:translateX(-50%);
       background:var(--bg-primary);border:0.5px solid var(--border-md);
       border-radius:var(--radius-md);box-shadow:var(--shadow-md);
-      padding:14px 16px;width:380px;max-width:calc(100vw - 32px);z-index:350}
+      padding:14px 16px;width:380px;max-width:calc(100vw - 32px);z-index:350;
+      max-height:calc(100vh - 80px);overflow-y:auto;-webkit-overflow-scrolling:touch}
     .voice-panel-task{font-size:11px;font-weight:600;letter-spacing:0.4px;
       text-transform:uppercase;color:var(--text-tertiary);margin-bottom:6px}
     .voice-transcript{font-size:12px;color:var(--text-secondary);font-style:italic;
@@ -322,6 +326,15 @@
     .form-input.err{border-color:#E24B4A}
     .form-textarea{resize:vertical;min-height:72px}
     .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .assignee-picker{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;min-height:32px}
+    .assignee-chip{display:flex;align-items:center;gap:6px;padding:5px 10px 5px 6px;
+      border:0.5px solid var(--border-md);border-radius:999px;cursor:pointer;
+      font-size:13px;color:var(--text-secondary);transition:all 0.12s;user-select:none}
+    .assignee-chip:hover{background:var(--bg-secondary)}
+    .assignee-chip.selected{background:var(--bg-tertiary);border-color:var(--accent);color:var(--text-primary);font-weight:500}
+    .assignee-chip input[type=checkbox]{display:none}
+    .chip-av{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;
+      justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
     .form-section-label{font-size:11px;font-weight:600;text-transform:uppercase;
       letter-spacing:0.5px;color:var(--text-tertiary);margin:18px 0 10px;
       padding-top:14px;border-top:0.5px solid var(--border)}
@@ -513,6 +526,11 @@
     <div class="user-dd-name" id="ddUserName">…</div>
     <div class="user-dd-role" id="ddUserRole"></div>
   </div>
+  <div class="user-dd-section">Preferences</div>
+  <button class="user-dd-item" id="themeToggleBtn" onclick="toggleTheme()">
+    <span id="themeToggleLabel">Dark mode</span>
+  </button>
+  <div class="user-dd-section">Account</div>
   <button class="user-dd-item" onclick="closeUserMenu();openPwdModal()">Change password</button>
   <button class="user-dd-item signout" onclick="closeUserMenu();signOut()">Sign out</button>
 </div>
@@ -603,7 +621,6 @@
     </div>
     <button id="globalVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
     <button class="btn-secondary" onclick="toggleFilterBar()">⊟ Filter</button>
-    <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle dark/light mode">☀</button>
     <button class="btn-primary manager-only" onclick="openModal()">+ New task</button>
     <div class="topbar-user" id="topbarUserWrap">
       <button class="topbar-avatar" id="topbarAvatar" onclick="toggleUserMenu(event)">?</button>
@@ -762,8 +779,8 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">Assigned to (comma separated)</label>
-        <input class="form-input" id="fAssignees" placeholder="e.g. Marco, Jane" />
+        <label class="form-label">Assigned to</label>
+        <div class="assignee-picker" id="fAssigneesWrap"></div>
       </div>
 
       <div class="form-group">
@@ -847,11 +864,12 @@ const AV_COLS=[
 
 let tasks=[],openId=null,editId=null,currentView='list';
 let filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
-let currentUser=null,currentRole='worker',currentProfile=null;
+let currentUser=null,currentRole='worker',currentProfile=null,allProfiles=[];
 const selectedIds=new Set();
 
 const LINEAGES=['Land & Forest','Farm & Garden','Building Improvements','Other Building','Site Infrastructure','Housekeeping','Kitchen','Dining','Administration'];
-let voiceState={recording:false,mediaRecorder:null,chunks:[]};
+let voiceState={recording:false,mediaRecorder:null,chunks:[],stream:null,releaseTimer:null};
+const MIC_RELEASE_MS=5*60*1000; // 5 minutes
 let voicePendingResult=null;
 
 function avColor(n){let h=0;for(let c of n)h=(h*31+c.charCodeAt(0))%AV_COLS.length;return AV_COLS[Math.abs(h)];}
@@ -965,7 +983,7 @@ async function onSignedIn(user){
   currentProfile=profile;
   currentRole=profile.role||'worker';
   applyRoleUI(); // update with real name + role
-  await loadData();
+  await Promise.all([loadData(),loadProfiles()]);
   setupRealtime();
 }
 
@@ -990,6 +1008,7 @@ function applyRoleUI(){
 }
 
 async function signOut(){
+  releaseMicStream();
   await sb.auth.signOut();
   currentUser=null;currentProfile=null;currentRole='worker';tasks=[];
   showLoginScreen();
@@ -1012,6 +1031,11 @@ async function loadData(){
   if(error){console.error('loadData:',error);return;}
   tasks=(data||[]).map(fromDb);
   render();
+}
+async function loadProfiles(){
+  const{data,error}=await sb.from('profiles').select('id,name,role').order('name');
+  if(error){console.error('loadProfiles:',error);return;}
+  allProfiles=data||[];
 }
 
 // ── RENDER ──
@@ -1323,11 +1347,14 @@ async function toggleVoice(){
 
 async function startVoiceInput(){
   try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    // Reuse existing stream if tracks are still live — avoids re-prompting on iOS Firefox
+    clearTimeout(voiceState.releaseTimer);
+    const needsStream=!voiceState.stream||voiceState.stream.getTracks().some(t=>t.readyState==='ended');
+    if(needsStream)voiceState.stream=await navigator.mediaDevices.getUserMedia({audio:true});
     voiceState.chunks=[];voiceState.recording=true;
     const mimeType=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':
       MediaRecorder.isTypeSupported('audio/webm')?'audio/webm':'audio/mp4';
-    voiceState.mediaRecorder=new MediaRecorder(stream,{mimeType});
+    voiceState.mediaRecorder=new MediaRecorder(voiceState.stream,{mimeType});
     voiceState.mediaRecorder.ondataavailable=e=>{if(e.data.size>0)voiceState.chunks.push(e.data);};
     voiceState.mediaRecorder.onstop=()=>processVoiceInput(mimeType);
     voiceState.mediaRecorder.start();
@@ -1342,8 +1369,22 @@ function stopVoiceInput(){
   if(!voiceState.mediaRecorder)return;
   voiceState.recording=false;
   voiceState.mediaRecorder.stop();
-  voiceState.mediaRecorder.stream.getTracks().forEach(t=>t.stop());
   setVoiceBtn('processing');
+  // Keep stream alive for 5 min so iOS doesn't re-prompt on next use
+  scheduleMicRelease();
+}
+
+function releaseMicStream(){
+  clearTimeout(voiceState.releaseTimer);
+  voiceState.releaseTimer=null;
+  if(voiceState.stream){
+    voiceState.stream.getTracks().forEach(t=>t.stop());
+    voiceState.stream=null;
+  }
+}
+function scheduleMicRelease(){
+  clearTimeout(voiceState.releaseTimer);
+  voiceState.releaseTimer=setTimeout(releaseMicStream,MIC_RELEASE_MS);
 }
 
 async function processVoiceInput(mimeType){
@@ -1352,7 +1393,7 @@ async function processVoiceInput(mimeType){
   const context={
     tasks:tasks.map(t=>({id:t.id,name:t.name})),
     lineages:LINEAGES,
-    people:[...new Set(tasks.flatMap(t=>t.assignees))].filter(Boolean)
+    people:allProfiles.length?allProfiles.map(p=>p.name):[...new Set(tasks.flatMap(t=>t.assignees))].filter(Boolean)
   };
   const fd=new FormData();
   fd.append('audio',blob,'rec.'+(mimeType.includes('mp4')?'mp4':'webm'));
@@ -1568,6 +1609,28 @@ function addMat(name='',type='find'){
 function getSteps(){return[...document.querySelectorAll('#stepsWrap .dyn-row input')].map(i=>i.value.trim()).filter(Boolean);}
 function getMats(){return[...document.querySelectorAll('#matsWrap .dyn-row')].map(r=>({name:r.querySelector('input').value.trim(),type:r.querySelector('select').value})).filter(m=>m.name);}
 
+function populateAssigneePicker(selected=[]){
+  const wrap=document.getElementById('fAssigneesWrap');
+  if(!wrap)return;
+  if(!allProfiles.length){
+    wrap.innerHTML='<span style="font-size:12px;color:var(--text-tertiary)">No users found</span>';
+    return;
+  }
+  wrap.innerHTML=allProfiles.map(p=>{
+    const isSel=selected.includes(p.name);
+    const c=avColor(p.name);
+    return`<label class="assignee-chip${isSel?' selected':''}">
+      <input type="checkbox" value="${escHtml(p.name)}" ${isSel?'checked':''}
+        onchange="this.closest('.assignee-chip').classList.toggle('selected',this.checked)">
+      <span class="chip-av" style="background:${c.bg};color:${c.fg}">${initials(p.name)}</span>
+      ${escHtml(p.name)}
+    </label>`;
+  }).join('');
+}
+function getAssignees(){
+  return[...document.querySelectorAll('#fAssigneesWrap input[type=checkbox]:checked')].map(el=>el.value);
+}
+
 function openModal(editing){
   if(editing&&openId){
     const t=tasks.find(x=>x.id===openId);if(!t)return;
@@ -1584,7 +1647,7 @@ function openModal(editing){
     document.getElementById('fWeather').value=t.weatherDependent||'no';
     document.getElementById('fWeatherNote').value=t.weatherNote||'';
     document.getElementById('fLocation').value=t.location||'';
-    document.getElementById('fAssignees').value=t.assignees.join(', ');
+    populateAssigneePicker(t.assignees);
     document.getElementById('fDue').value=t.dueDate||'';
     document.getElementById('fHours').value=t.estimatedHours||'';
     document.getElementById('fPercent').value=t.percentComplete||0;
@@ -1599,8 +1662,9 @@ function openModal(editing){
   } else {
     editId=null;
     document.getElementById('modalTitle').textContent='New task';
-    ['fName','fDesc','fCreator','fProject','fLocation','fAssignees','fDue',
+    ['fName','fDesc','fCreator','fProject','fLocation','fDue',
      'fHours','fFollowup','fSchedule','fTools','fNotes','fWeatherNote'].forEach(id=>{document.getElementById(id).value='';});
+    populateAssigneePicker([]);
     document.getElementById('fStage').value='created';
     document.getElementById('fLineage').value='';
     document.getElementById('fPriority').value='medium';
@@ -1633,7 +1697,7 @@ async function saveTask(){
     weatherDependent:document.getElementById('fWeather').value,
     weatherNote:document.getElementById('fWeatherNote').value.trim(),
     location:document.getElementById('fLocation').value.trim(),
-    assignees:parse('fAssignees'),
+    assignees:getAssignees(),
     dueDate:document.getElementById('fDue').value,
     estimatedHours:parseFloat(document.getElementById('fHours').value)||0,
     percentComplete:parseInt(document.getElementById('fPercent').value)||0,
@@ -1642,6 +1706,8 @@ async function saveTask(){
     steps:getSteps(),materials:getMats(),tools:parse('fTools'),
     taskNotes:document.getElementById('fNotes').value.trim()
   };
+  // Auto-advance stage: created → assigned when assignees added
+  if(data.assignees.length>0&&data.stage==='created')data.stage='assigned';
   const wasEditing=editId;
   if(editId){
     const{error}=await sb.from('tasks').update(toDb(data)).eq('id',editId);
@@ -1865,8 +1931,8 @@ function applyTheme(theme){
   document.body.classList.remove('theme-light','theme-dark');
   if(theme)document.body.classList.add('theme-'+theme);
   const isDark=theme==='dark'||(theme===null&&window.matchMedia('(prefers-color-scheme:dark)').matches);
-  const btns=document.querySelectorAll('.theme-toggle');
-  btns.forEach(b=>b.textContent=isDark?'☀':'☾');
+  const lbl=document.getElementById('themeToggleLabel');
+  if(lbl)lbl.textContent=isDark?'Switch to light mode':'Switch to dark mode';
 }
 function toggleTheme(){
   const current=localStorage.getItem('tt_theme');
