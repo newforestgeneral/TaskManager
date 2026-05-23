@@ -1174,7 +1174,11 @@ async function bulkChangeStage(stage){
   if(!stage||!selectedIds.size)return;
   const ids=[...selectedIds];
   const update={stage};if(stage==='complete')update.percent_complete=100;
-  for(const id of ids){await sb.from('tasks').update(update).eq('id',id);}
+  const label=STAGE[stage]?.label||stage;
+  for(const id of ids){
+    await sb.from('tasks').update(update).eq('id',id);
+    await logUpdate(id,`Stage changed to: ${label}`);
+  }
   selectedIds.clear();await loadData();
 }
 
@@ -1330,14 +1334,18 @@ async function changeStage(id,stage){
   if(stage==='complete')update.percent_complete=100;
   const{error}=await sb.from('tasks').update(update).eq('id',id);
   if(error){console.error('changeStage:',error);return;}
+  const label=STAGE[stage]?.label||stage;
+  await logUpdate(id,`Stage changed to: ${label}`);
   await loadData();openDetail(id);
 }
 
 async function savePercent(id,val){
-  const{error}=await sb.from('tasks').update({percent_complete:parseInt(val)}).eq('id',id);
+  const parsed=parseInt(val);
+  const{error}=await sb.from('tasks').update({percent_complete:parsed}).eq('id',id);
   if(error){console.error('savePercent:',error);return;}
+  await logUpdate(id,`Progress updated to ${parsed}%`);
   const t=tasks.find(x=>x.id===id);
-  if(t){t.percentComplete=parseInt(val);render();}
+  if(t){t.percentComplete=parsed;render();}
 }
 
 async function postUpdate(){
@@ -1573,6 +1581,7 @@ async function confirmVoiceEdits(){
     };
     const{data:inserted,error}=await sb.from('tasks').insert(toDb(newTask)).select().single();
     if(error){console.error('voice insert:',error);return;}
+    if(inserted)await logUpdate(inserted.id,'Task created via voice','Voice');
     clearVoicePreview();
     await loadData();
     if(inserted)openDetail(inserted.id);
@@ -1580,9 +1589,14 @@ async function confirmVoiceEdits(){
     // ── UPDATE EXISTING TASK ──
     const t=tasks.find(x=>x.id===result.target_task_id);
     if(!t){alert('Could not find the target task.');return;}
+    const changes=diffTask(t,{...t,...edits});
     const merged={...t,...edits};
     const{error}=await sb.from('tasks').update(toDb(merged)).eq('id',result.target_task_id);
     if(error){console.error('voice apply:',error);return;}
+    const summary=changes.length
+      ?`Task updated via voice: ${changes.join('; ')}`
+      :'Task updated via voice';
+    await logUpdate(result.target_task_id,summary,'Voice');
     clearVoicePreview();
     await loadData();
     openDetail(result.target_task_id);
@@ -1735,6 +1749,35 @@ function openModal(editing){
 function openModalStage(stage){openModal(false);document.getElementById('fStage').value=stage;}
 function closeModal(){document.getElementById('modalOverlay').classList.add('hidden');editId=null;}
 
+// ── ACTIVITY LOG ──
+async function logUpdate(taskId,text,via='Web app'){
+  const author=currentProfile?.name||currentUser?.email||'Team member';
+  await sb.from('task_updates').insert({
+    task_id:taskId,author,text,
+    date:new Date().toISOString().split('T')[0],via
+  });
+}
+
+const FIELD_LABELS={
+  name:'Name',description:'Description',stage:'Stage',priority:'Priority',
+  lineage:'Lineage',assignees:'Assignees',dueDate:'Due date',startDate:'Start date',
+  followUpDate:'Follow-up date',estimatedHours:'Estimated hours',percentComplete:'% complete',
+  location:'Location',weatherDependent:'Weather dependent',weatherNote:'Weather note',
+  suggestedSchedule:'Suggested schedule',humanResources:'Human resources',
+  steps:'Steps',materials:'Materials',tools:'Tools',taskNotes:'Notes',
+  creatorName:'Creator',project:'Project'
+};
+function diffTask(before,after){
+  const changes=[];
+  for(const key of Object.keys(FIELD_LABELS)){
+    const a=before[key],b=after[key];
+    const aStr=Array.isArray(a)?a.join(', '):(a??'');
+    const bStr=Array.isArray(b)?b.join(', '):(b??'');
+    if(aStr!==bStr)changes.push(`${FIELD_LABELS[key]}: ${aStr||'(none)'} → ${bStr||'(none)'}`);
+  }
+  return changes;
+}
+
 async function saveTask(){
   const name=document.getElementById('fName').value.trim();
   if(!name){document.getElementById('fName').classList.add('err');document.getElementById('fName').focus();return;}
@@ -1763,11 +1806,18 @@ async function saveTask(){
   if(data.assignees.length>0&&data.stage==='created')data.stage='assigned';
   const wasEditing=editId;
   if(editId){
+    const before=tasks.find(x=>x.id===editId);
     const{error}=await sb.from('tasks').update(toDb(data)).eq('id',editId);
     if(error){console.error('saveTask update:',error);return;}
+    const changes=before?diffTask(before,data):[];
+    const summary=changes.length
+      ?`Task updated: ${changes.join('; ')}`
+      :'Task updated (no field changes detected)';
+    await logUpdate(editId,summary);
   } else {
-    const{error}=await sb.from('tasks').insert(toDb(data));
+    const{data:inserted,error}=await sb.from('tasks').insert(toDb(data)).select().single();
     if(error){console.error('saveTask insert:',error);return;}
+    if(inserted)await logUpdate(inserted.id,'Task created');
   }
   closeModal();await loadData();
   if(wasEditing)openDetail(wasEditing);
