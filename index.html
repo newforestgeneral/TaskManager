@@ -36,8 +36,8 @@
     .sidebar{width:var(--sidebar-width);background:var(--bg-primary);
       border-right:0.5px solid var(--border);display:flex;flex-direction:column;
       height:100vh;flex-shrink:0}
-    .sidebar-logo{padding:16px 14px 14px;font-size:15px;font-weight:600;
-      border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:9px}
+    .sidebar-logo{height:52px;padding:0 14px;font-size:15px;font-weight:600;
+      border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:9px;flex-shrink:0}
     .logo-icon{width:26px;height:26px;background:var(--accent);border-radius:6px;
       display:flex;align-items:center;justify-content:center;color:white;
       font-size:13px;font-weight:700;flex-shrink:0}
@@ -88,7 +88,7 @@
     .user-dd-item.signout:hover{background:#FCEBEB}
 
     .topbar{background:var(--bg-primary);border-bottom:0.5px solid var(--border);
-      padding:11px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+      height:52px;padding:0 20px;display:flex;align-items:center;gap:10px;flex-shrink:0}
     .topbar-title{font-size:16px;font-weight:600;flex:1}
     .btn-primary{background:var(--accent);color:white;border:none;padding:7px 14px;
       border-radius:var(--radius-md);font-size:13px;font-weight:500;cursor:pointer;
@@ -129,7 +129,7 @@
     .badge-coral {background:#FAECE7;color:#712B13}
 
     /* LIST VIEW */
-    .list-container{flex:1;overflow-y:auto;padding:16px 20px}
+    .list-container{flex:1;overflow-y:auto;padding:10px 16px}
     .email-list{background:var(--bg-primary);border-radius:var(--radius-lg);
       border:0.5px solid var(--border);overflow:hidden}
     .email-list-header{display:flex;align-items:center;padding:8px 14px;
@@ -153,7 +153,7 @@
     .bulk-sep{width:0.5px;height:16px;background:var(--border-md);margin:0 2px}
 
     /* EMAIL ROW */
-    .email-row{display:flex;align-items:center;gap:10px;padding:10px 14px;
+    .email-row{display:flex;align-items:center;gap:8px;padding:7px 12px;
       border-bottom:0.5px solid var(--border);cursor:pointer;transition:background 0.1s;
       user-select:none}
     .email-row:last-child{border-bottom:none}
@@ -162,20 +162,20 @@
     @media(prefers-color-scheme:dark){.email-row.selected{background:#18173a}}
     .er-check{flex-shrink:0;width:32px;display:flex;align-items:center;justify-content:center}
     .er-check label{display:flex;align-items:center;justify-content:center;
-      min-width:28px;min-height:44px;cursor:pointer}
+      min-width:28px;min-height:32px;cursor:pointer}
     .er-check input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
-    .er-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;
-      justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
+    .er-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+      justify-content:center;font-size:10px;font-weight:600;flex-shrink:0}
     .er-body{flex:1;min-width:0}
     .er-title{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .er-meta{font-size:11px;color:var(--text-tertiary);margin-top:2px;
+    .er-meta{font-size:11px;color:var(--text-tertiary);margin-top:1px;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .er-right{flex-shrink:0;display:flex;align-items:center;gap:8px}
     .er-stage{font-size:11px;font-weight:500;padding:2px 9px;border-radius:999px;
       width:86px;text-align:center;flex-shrink:0;white-space:nowrap}
     .er-due{font-size:11px;color:var(--text-tertiary);width:70px;text-align:right;flex-shrink:0}
     .er-due.overdue{color:#A32D2D;font-weight:500}
-    @media(max-width:768px){.er-due{display:none}.list-container{padding:10px 12px}}
+    @media(max-width:768px){.er-due{display:none}.list-container{padding:6px 8px}}
 
     /* INLINE EXPAND */
     .email-item{display:flex;flex-direction:column}
@@ -183,8 +183,8 @@
     .email-row.open .er-chevron{transform:rotate(90deg)}
     .er-chevron{font-size:11px;color:var(--text-tertiary);transition:transform 0.15s;flex-shrink:0}
     .email-expand{border-top:0.5px solid var(--border);border-bottom:2px solid var(--border-md);
-      background:var(--bg-secondary);margin-bottom:1px;padding-bottom:20px}
-    .expand-header{padding:12px 16px 8px;display:flex;align-items:flex-start;gap:10px;
+      background:var(--bg-secondary);margin-bottom:1px;padding-bottom:8px}
+    .expand-header{padding:8px 14px 6px;display:flex;align-items:flex-start;gap:10px;
       background:var(--bg-primary);border-bottom:0.5px solid var(--border)}
     .expand-title{font-size:15px;font-weight:600;flex:1;line-height:1.3}
     .expand-sub{font-size:11px;color:var(--text-tertiary);margin-top:2px}
@@ -192,18 +192,18 @@
     /* 2-column field grid inside expand */
     .field-grid-2{display:grid;grid-template-columns:100px 1fr 100px 1fr;
       border:0.5px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
-    .field-grid-2 .frl{padding:6px 10px;font-size:11px;color:var(--text-secondary);
+    .field-grid-2 .frl{padding:5px 8px;font-size:11px;color:var(--text-secondary);
       background:var(--bg-secondary);border-bottom:0.5px solid var(--border);display:flex;align-items:center}
-    .field-grid-2 .frv{padding:6px 10px;font-size:12px;border-bottom:0.5px solid var(--border);
+    .field-grid-2 .frv{padding:5px 8px;font-size:12px;border-bottom:0.5px solid var(--border);
       display:flex;align-items:center;gap:5px;flex-wrap:wrap}
     .field-grid-2 .frl:nth-last-child(4),.field-grid-2 .frl:nth-last-child(3),
     .field-grid-2 .frv:nth-last-child(2),.field-grid-2 .frv:last-child{border-bottom:none}
-    .panel-section{padding:10px 16px;border-bottom:0.5px solid var(--border);background:var(--bg-primary)}
+    .panel-section{padding:7px 14px;border-bottom:0.5px solid var(--border);background:var(--bg-primary)}
     .panel-section:last-child{border-bottom:none}
     .panel-title{font-size:18px;font-weight:600;margin-bottom:3px;line-height:1.3}
     .panel-sub{font-size:12px;color:var(--text-tertiary);margin-bottom:10px}
     .sec-label{font-size:10px;font-weight:600;text-transform:uppercase;
-      letter-spacing:0.6px;color:var(--text-tertiary);margin-bottom:8px}
+      letter-spacing:0.6px;color:var(--text-tertiary);margin-bottom:4px}
     .field-grid{display:grid;grid-template-columns:120px 1fr;
       border:0.5px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
     .frl{padding:8px 12px;font-size:12px;color:var(--text-secondary);
@@ -255,13 +255,13 @@
     .upd-del:hover{background:#501313;color:#F09595;border-color:#501313}
 
     .update-item{border:0.5px solid var(--border);border-radius:var(--radius-md);
-      padding:10px 12px;margin-bottom:8px}
-    .update-header{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+      padding:7px 10px;margin-bottom:5px}
+    .update-header{display:flex;align-items:center;gap:8px;margin-bottom:3px}
     .update-author{font-size:12px;font-weight:500}
     .update-date{font-size:11px;color:var(--text-tertiary);margin-left:auto}
     .update-via{font-size:10px;color:var(--text-tertiary);margin-top:3px}
     .update-text{font-size:13px;color:var(--text-secondary);line-height:1.5}
-    .panel-actions{display:flex;gap:8px;padding:10px 16px;
+    .panel-actions{display:flex;gap:8px;padding:8px 14px;
       border-top:0.5px solid var(--border);background:var(--bg-primary)}
 
     /* VOICE INPUT */
@@ -1149,7 +1149,6 @@ function renderList(){
           <div class="er-meta">${metaParts}</div>
         </div>
         <div class="er-right">
-          <span class="er-stage badge ${sm.badge}">${sm.label}</span>
           <span class="er-due${od?' overdue':''}">${t.dueDate?fmtDate(t.dueDate):''}</span>
           <span class="er-chevron">›</span>
         </div>
@@ -1236,9 +1235,7 @@ function taskExpandHtml(t){
   const od=isOverdue(t.dueDate,t.stage);
   const isManager=currentRole==='manager';
 
-  const stageOpts=Object.entries(STAGE).map(([k,v])=>
-    `<button class="stage-opt badge ${v.badge}${t.stage===k?' sel':''}" onclick="changeStage('${id}','${k}')">${v.label}</button>`).join('');
-  const stageRow=isManager?`<div class="stage-select-wrap">${stageOpts}</div>`:`<span class="badge ${sm.badge}">${sm.label}</span>`;
+  const stageRow=`<span class="badge ${sm.badge}">${sm.label}</span>`;
 
   const pctRow=isManager
     ?`<input type="range" class="progress-range" min="0" max="100" step="1"
@@ -1266,10 +1263,13 @@ function taskExpandHtml(t){
     ?t.tools.map(tool=>`<span class="badge badge-gray" style="margin:2px">${escHtml(tool)}</span>`).join('')
     :'<span style="color:var(--text-tertiary)">—</span>';
 
-  const visibleUpdates=(t.updates||[]).filter(u=>!u.text.startsWith('[SNAP]'));
-  const updatesHtml=visibleUpdates.slice().reverse().map(u=>{
+  const visibleUpdates=(t.updates||[]).filter(u=>!u.text.startsWith('[SNAP]')&&!u.text.startsWith('[SYS]'));
+  const reversedUpdates=visibleUpdates.slice().reverse();
+  const UPDATES_SHOWN=3;
+  const updatesHtml=reversedUpdates.map((u,i)=>{
     const c=avColor(u.author);const uid=u.id||'';const safeText=u.text.replace(/'/g,"\\'");
-    return`<div class="update-item" id="ui-${uid}">
+    const hidden=i>=UPDATES_SHOWN;
+    return`<div class="update-item${hidden?' upd-extra':''}" id="ui-${uid}"${hidden?' style="display:none"':''}>
       <div class="update-header">
         <div class="avatar" style="background:${c.bg};color:${c.fg};width:22px;height:22px;font-size:8px;border:none">${initials(u.author)}</div>
         <span class="update-author">${escHtml(u.author)}</span>
@@ -1283,6 +1283,10 @@ function taskExpandHtml(t){
       ${u.via?`<div class="update-via">via ${escHtml(u.via)}</div>`:''}
     </div>`;
   }).join('');
+  const hiddenCount=Math.max(0,reversedUpdates.length-UPDATES_SHOWN);
+  const showMoreBtn=hiddenCount>0
+    ?`<button class="upd-btn" id="showMoreUpdBtn" onclick="toggleMoreUpdates('${id}')" style="margin-top:6px">Show ${hiddenCount} more</button>`
+    :'';
 
   const authorName=currentProfile?.name||currentUser?.email||'';
 
@@ -1298,14 +1302,14 @@ function taskExpandHtml(t){
         <button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="closeDetail()">✕</button>
       </div>
     </div>
-    <div class="panel-section" style="padding:10px 16px;background:var(--bg-primary)">
+    <div class="panel-section">
       <div class="field-grid-2">
         <div class="frl" style="grid-column:1">Stage</div><div class="frv" style="grid-column:2/5">${stageRow}</div>
         <div class="frl">Priority</div><div class="frv"><span class="badge ${pm.badge}">${pm.label}</span>${od?' <span class="badge badge-red">Overdue</span>':''}</div>
-        <div class="frl">Assigned</div><div class="frv" style="flex-wrap:wrap;gap:4px">${avRow||'—'}</div>
-        <div class="frl">Due date</div><div class="frv" style="${od?'color:#A32D2D;font-weight:500':''}">${t.dueDate?fmtDate(t.dueDate):'—'}</div>
-        <div class="frl">Follow-up</div><div class="frv">${t.followUpDate?fmtDate(t.followUpDate):'—'}</div>
-        <div class="frl">Est. hours</div><div class="frv">${t.estimatedHours?t.estimatedHours+' hrs':'—'}</div>
+        ${t.assignees.length?`<div class="frl">Assigned</div><div class="frv" style="flex-wrap:wrap;gap:4px">${avRow}</div>`:''}
+        ${t.dueDate?`<div class="frl">Due date</div><div class="frv" style="${od?'color:#A32D2D;font-weight:500':''}">${fmtDate(t.dueDate)}</div>`:''}
+        ${t.followUpDate?`<div class="frl">Follow-up</div><div class="frv">${fmtDate(t.followUpDate)}</div>`:''}
+        ${t.estimatedHours?`<div class="frl">Est. hours</div><div class="frv">${t.estimatedHours} hrs</div>`:''}
         <div class="frl">% complete</div><div class="frv">${pctRow}</div>
         ${t.humanResources?`<div class="frl">Resources</div><div class="frv">${t.humanResources} people</div>`:''}
         ${t.location?`<div class="frl">Location</div><div class="frv">${escHtml(t.location)}</div>`:''}
@@ -1313,23 +1317,24 @@ function taskExpandHtml(t){
         ${t.suggestedSchedule?`<div class="frl">Schedule</div><div class="frv">${escHtml(t.suggestedSchedule)}</div>`:''}
       </div>
     </div>
-    ${t.description?`<div class="panel-section" style="padding:8px 16px"><div class="sec-label" style="margin-bottom:4px">Description</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.6">${escHtml(t.description)}</div></div>`:''}
-    ${(t.steps||[]).length?`<div class="panel-section" style="padding:8px 16px"><div class="sec-label" style="margin-bottom:4px">Steps</div>${stepsHtml}</div>`:''}
-    ${(t.materials||[]).length||(t.tools||[]).length?`<div class="panel-section" style="padding:8px 16px">
+    ${t.description?`<div class="panel-section" style=""><div class="sec-label" style="margin-bottom:4px">Description</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.6">${escHtml(t.description)}</div></div>`:''}
+    ${(t.steps||[]).length?`<div class="panel-section" style=""><div class="sec-label" style="margin-bottom:4px">Steps</div>${stepsHtml}</div>`:''}
+    ${(t.materials||[]).length||(t.tools||[]).length?`<div class="panel-section" style="">
       ${(t.materials||[]).length?`<div class="sec-label" style="margin-bottom:4px">Materials</div>${matsHtml}`:''}
       ${(t.tools||[]).length?`<div class="sec-label" style="margin-top:${(t.materials||[]).length?'8px':'0'};margin-bottom:4px">Tools</div><div style="display:flex;flex-wrap:wrap;gap:3px">${toolsHtml}</div>`:''}
     </div>`:''}
-    ${t.taskNotes?`<div class="panel-section" style="padding:8px 16px"><div class="sec-label" style="margin-bottom:4px">Notes</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.5;background:var(--bg-tertiary);padding:8px 10px;border-radius:var(--radius-sm)">${escHtml(t.taskNotes)}</div></div>`:''}
-    <div class="panel-section" style="padding:8px 16px">
+    ${t.taskNotes?`<div class="panel-section" style=""><div class="sec-label" style="margin-bottom:4px">Notes</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.5;background:var(--bg-tertiary);padding:8px 10px;border-radius:var(--radius-sm)">${escHtml(t.taskNotes)}</div></div>`:''}
+    <div class="panel-section" style="">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div class="sec-label" style="margin-bottom:0">Photos</div>
         <label class="photo-upload-label" style="font-size:11px">+ Add<input type="file" accept="image/*" multiple style="display:none" onchange="uploadPhoto(event,'${id}')"></label>
       </div>
       <div class="photo-grid" id="photoGrid"><span style="color:var(--text-tertiary);font-size:12px">Loading…</span></div>
     </div>
-    <div class="panel-section" style="padding:8px 16px">
-      <div class="sec-label" style="margin-bottom:6px">Updates (${visibleUpdates.length})</div>
+    <div class="panel-section" style="">
+      <div class="sec-label">Updates (${visibleUpdates.length})</div>
       ${updatesHtml||'<div style="color:var(--text-tertiary);font-size:12px">No updates yet.</div>'}
+      ${showMoreBtn}
     </div>
     <div class="panel-actions">
       <div style="flex:1">
@@ -1361,6 +1366,16 @@ function openDetail(id){
 function toggleExpand(id){
   if(openId===id){closeDetail();return;}
   openDetail(id);
+}
+
+function toggleMoreUpdates(taskId){
+  const expEl=document.getElementById('exp-'+taskId);
+  if(!expEl)return;
+  const extras=expEl.querySelectorAll('.upd-extra');
+  const btn=document.getElementById('showMoreUpdBtn');
+  const hidden=extras[0]?.style.display==='none';
+  extras.forEach(el=>el.style.display=hidden?'':'none');
+  if(btn)btn.textContent=hidden?'Show less':`Show ${extras.length} more`;
 }
 
 function closeDetail(){
@@ -1831,10 +1846,10 @@ function openModalStage(stage){openModal(false);document.getElementById('fStage'
 function closeModal(){document.getElementById('modalOverlay').classList.add('hidden');editId=null;}
 
 // ── ACTIVITY LOG ──
-async function logUpdate(taskId,text,via='Web app'){
+async function logUpdate(taskId,text,via='System'){
   const author=currentProfile?.name||currentUser?.email||'Team member';
   await sb.from('task_updates').insert({
-    task_id:taskId,author,text,
+    task_id:taskId,author,text:'[SYS] '+text,
     date:new Date().toISOString().split('T')[0],via
   });
 }
