@@ -963,7 +963,8 @@ const LINEAGES=['Land & Forest','Farm & Garden','Building Improvements','Other B
 let voiceState={recording:false,mediaRecorder:null,chunks:[],stream:null,releaseTimer:null};
 const MIC_RELEASE_MS=5*60*1000; // 5 minutes
 let voicePendingResult=null;
-let voiceTaskId=null; // set when mic is used from inside a specific task
+let voiceTaskId=null;       // set when mic is used from inside a specific task
+let voiceDraftContext=null; // set when retrying a new-task voice creation
 
 function avColor(n){let h=0;for(let c of n)h=(h*31+c.charCodeAt(0))%AV_COLS.length;return AV_COLS[Math.abs(h)];}
 function initials(n){return n.trim().split(/\s+/).slice(0,2).map(w=>w[0].toUpperCase()).join('');}
@@ -1606,19 +1607,21 @@ async function processVoiceInput(mimeType){
   const blob=new Blob(voiceState.chunks,{type:mimeType});
   voiceState.chunks=[];
   const taskCtx=voiceTaskId?tasks.find(x=>x.id===voiceTaskId):null;
+  const effectiveTaskCtx=taskCtx?{
+    id:taskCtx.id,name:taskCtx.name,description:taskCtx.description,
+    stage:taskCtx.stage,assignees:taskCtx.assignees,lineage:taskCtx.lineage,
+    priority:taskCtx.priority,startDate:taskCtx.startDate,dueDate:taskCtx.dueDate,
+    percentComplete:taskCtx.percentComplete,location:taskCtx.location,
+    steps:taskCtx.steps,tools:taskCtx.tools
+  }:voiceDraftContext||null;
   const context={
     tasks:tasks.map(t=>({id:t.id,name:t.name})),
     lineages:LINEAGES,
     people:allProfiles.length?allProfiles.map(p=>p.name):[...new Set(tasks.flatMap(t=>t.assignees))].filter(Boolean),
-    mode:voiceTaskId?'task':'general',
-    task_context:taskCtx?{
-      id:taskCtx.id,name:taskCtx.name,description:taskCtx.description,
-      stage:taskCtx.stage,assignees:taskCtx.assignees,lineage:taskCtx.lineage,
-      priority:taskCtx.priority,startDate:taskCtx.startDate,dueDate:taskCtx.dueDate,
-      percentComplete:taskCtx.percentComplete,location:taskCtx.location,
-      steps:taskCtx.steps,tools:taskCtx.tools
-    }:null
+    mode:voiceTaskId?'task':voiceDraftContext?'draft':'general',
+    task_context:effectiveTaskCtx
   };
+  voiceDraftContext=null; // consumed
   const fd=new FormData();
   fd.append('audio',blob,'rec.'+(mimeType.includes('mp4')?'mp4':'webm'));
   fd.append('context',JSON.stringify(context));
@@ -1662,9 +1665,40 @@ async function processVoiceInput(mimeType){
   }
 }
 
+function showVoiceListening(){
+  const el=document.getElementById('voicePanel');
+  if(!el)return;
+  el.style.display='block';
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:4px 0">
+    <button class="btn-voice recording" id="voiceRetryBtn" onclick="stopVoiceInput()" title="Tap to stop">⏹</button>
+    <span style="font-size:13px;color:var(--text-secondary)">Listening…</span>
+  </div>`;
+}
 function retryVoice(){
-  if(voiceTaskId)toggleTaskVoice(voiceTaskId);
-  else toggleVoice();
+  showVoiceListening();
+  if(voiceTaskId){
+    toggleTaskVoice(voiceTaskId);
+  } else if(voicePendingResult&&!voicePendingResult.target_task_id){
+    const e=voicePendingResult.edits||{};
+    voiceDraftContext={
+      id:'__draft__',
+      name:e.name||voicePendingResult.target_task_name||'New task',
+      description:e.description||'',
+      assignees:e.assignees||[],
+      lineage:e.lineage||'',
+      priority:e.priority||'medium',
+      startDate:e.startDate||'',
+      dueDate:e.dueDate||'',
+      estimatedHours:e.estimatedHours||null,
+      steps:e.steps||[],
+      tools:e.tools||[],
+      location:e.location||'',
+    };
+    if(voiceState.recording)stopVoiceInput();
+    else startVoiceInput();
+  } else {
+    toggleVoice();
+  }
 }
 function setVoiceBtn(state){
   const ids=['globalVoiceBtn','mobVoiceBtn','voiceRetryBtn'];
@@ -1753,13 +1787,18 @@ function renderVoiceError(msg){
   if(!el)return;
   el.style.display='block';
   el.innerHTML=`<div class="voice-error"><span style="flex-shrink:0">⚠</span><span>${escHtml(msg)}</span></div>
-    <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-top:10px" onclick="clearVoicePreview()">Dismiss</button>`;
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-voice" id="voiceRetryBtn" onclick="retryVoice()" title="Try again">🎤</button>
+      <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="clearVoicePreview()">Dismiss</button>
+    </div>`;
 }
 
 function clearVoicePreview(){
   const el=document.getElementById('voicePanel');
   if(el){el.style.display='none';el.innerHTML='';}
   voicePendingResult=null;
+  voiceTaskId=null;
+  voiceDraftContext=null;
 }
 
 async function confirmVoiceEdits(){
@@ -1817,16 +1856,27 @@ async function confirmVoiceEdits(){
         ?`Task updated via voice: ${changes.join('; ')}`
         :'Task updated via voice';
       await logUpdate(tid,summary,'Voice');
-      // trigger stage automations
+      // ── Stage automations ──
+      let effectiveStage=merged.stage||t.stage;
+      // assignees added on a created task → assigned
+      if(merged.assignees?.length>0&&t.stage==='created'){
+        await sb.from('tasks').update({stage:'assigned'}).eq('id',tid);
+        await logUpdate(tid,'Stage auto-advanced to: Assigned');
+        effectiveStage='assigned';
+      }
+      // percent > 0 on assigned → inprogress (also stamps start date)
       if(edits.percentComplete!==undefined){
         const pct=parseInt(String(edits.percentComplete));
-        const reloaded=tasks.find(x=>x.id===tid);
-        let effectiveStage=merged.stage||reloaded?.stage;
         if(pct>0&&effectiveStage==='assigned'){await bumpToInProgress(tid);effectiveStage='inprogress';}
         if(pct===100&&effectiveStage==='inprogress'){
           await sb.from('tasks').update({stage:'review'}).eq('id',tid);
           await logUpdate(tid,'Stage auto-advanced to: Review');
         }
+      }
+      // voice explicitly sets stage to inprogress → stamp start date if blank
+      if(edits.stage==='inprogress'&&!t.startDate){
+        const today=new Date().toISOString().split('T')[0];
+        await sb.from('tasks').update({start_date:today}).eq('id',tid);
       }
     }
 
