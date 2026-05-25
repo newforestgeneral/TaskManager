@@ -38,6 +38,11 @@
       height:100vh;flex-shrink:0}
     .sidebar-logo{height:52px;padding:0 14px;font-size:15px;font-weight:600;
       border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:9px;flex-shrink:0}
+    .sidebar-close-btn{display:none;width:32px;height:32px;border:none;flex-shrink:0;
+      background:transparent;color:var(--text-secondary);font-size:18px;cursor:pointer;
+      border-radius:6px;align-items:center;justify-content:center;margin-right:2px}
+    .sidebar-close-btn:hover{background:var(--bg-secondary)}
+    @media(max-width:768px){.sidebar-close-btn{display:flex}}
     .logo-icon{width:26px;height:26px;background:var(--accent);border-radius:6px;
       display:flex;align-items:center;justify-content:center;color:white;
       font-size:13px;font-weight:700;flex-shrink:0}
@@ -576,6 +581,7 @@
 <!-- SIDEBAR -->
 <div class="sidebar" id="sidebar">
   <div class="sidebar-logo">
+    <button class="sidebar-close-btn" onclick="closeMobSidebar()" title="Close menu">☰</button>
     <div class="logo-icon">T</div>Task Tracker
   </div>
   <div class="sidebar-scroll">
@@ -2397,10 +2403,9 @@ function toggleLineageSidebar(){
 // ── VIEWS ──
 function setView(){renderList();}
 function toggleFilterBar(){document.getElementById('filterBar').classList.toggle('hidden');}
-function openMobSidebar(){document.getElementById('sidebar').classList.add('mob-open');document.getElementById('mobOverlay').classList.add('open');updateMobMenuBtn();}
-function closeMobSidebar(){document.getElementById('sidebar').classList.remove('mob-open');document.getElementById('mobOverlay').classList.remove('open');updateMobMenuBtn();}
+function openMobSidebar(){document.getElementById('sidebar').classList.add('mob-open');document.getElementById('mobOverlay').classList.add('open');}
+function closeMobSidebar(){document.getElementById('sidebar').classList.remove('mob-open');document.getElementById('mobOverlay').classList.remove('open');}
 function toggleMobSidebar(){document.getElementById('sidebar').classList.contains('mob-open')?closeMobSidebar():openMobSidebar();}
-function updateMobMenuBtn(){const btn=document.getElementById('mobMenuBtn');if(!btn)return;const open=document.getElementById('sidebar').classList.contains('mob-open');btn.textContent=open?'✕':'☰';}
 function setBottomNav(id){document.querySelectorAll('.bottom-nav-item').forEach(b=>b.classList.remove('active'));document.getElementById(id)?.classList.add('active');}
 function toggleMobFilter(){const fb=document.getElementById('filterBar');fb.style.display=fb.style.display==='flex'?'':'flex';}
 
