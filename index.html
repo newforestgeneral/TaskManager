@@ -835,9 +835,15 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Due date</label>
-        <input class="form-input" type="date" id="fDue" />
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Start date</label>
+          <input class="form-input" type="date" id="fStart" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Due date</label>
+          <input class="form-input" type="date" id="fDue" />
+        </div>
       </div>
 
       <div class="form-row">
@@ -881,6 +887,32 @@
         <textarea class="form-textarea" id="fNotes" placeholder="Internal notes, reminders, cautions…"></textarea>
       </div>
 
+      <div class="form-section-label manager-only">Recurrence</div>
+      <div class="manager-only">
+        <div class="form-group" style="margin-top:0">
+          <label class="form-label">Repeat</label>
+          <select class="form-select" id="fRecurrenceType" onchange="toggleRecurrenceFields()">
+            <option value="">None</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+        <div id="recurrenceFields" class="hidden">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Every N</label>
+              <input class="form-input" type="number" id="fRecurrenceInterval" min="1" value="1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">End date (optional)</label>
+              <input class="form-input" type="date" id="fRecurrenceEndDate" />
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -908,6 +940,13 @@ const PRIORITY={
   high:  {label:'High',   badge:'badge-amber',color:'#EF9F27'},
   urgent:{label:'Urgent', badge:'badge-red',  color:'#E24B4A'}
 };
+const STAGE_AV={
+  created:   {bg:'#EEEDFE',fg:'#3C3489'},
+  assigned:  {bg:'#F1EFE8',fg:'#555552'},
+  inprogress:{bg:'#E6F1FB',fg:'#0C447C'},
+  review:    {bg:'#FAEEDA',fg:'#633806'},
+  complete:  {bg:'#EAF3DE',fg:'#27500A'}
+};
 const AV_COLS=[
   {bg:'#EEEDFE',fg:'#3C3489'},{bg:'#E6F1FB',fg:'#0C447C'},
   {bg:'#E1F5EE',fg:'#085041'},{bg:'#FAECE7',fg:'#712B13'},
@@ -924,6 +963,7 @@ const LINEAGES=['Land & Forest','Farm & Garden','Building Improvements','Other B
 let voiceState={recording:false,mediaRecorder:null,chunks:[],stream:null,releaseTimer:null};
 const MIC_RELEASE_MS=5*60*1000; // 5 minutes
 let voicePendingResult=null;
+let voiceTaskId=null; // set when mic is used from inside a specific task
 
 function avColor(n){let h=0;for(let c of n)h=(h*31+c.charCodeAt(0))%AV_COLS.length;return AV_COLS[Math.abs(h)];}
 function initials(n){return n.trim().split(/\s+/).slice(0,2).map(w=>w[0].toUpperCase()).join('');}
@@ -944,6 +984,10 @@ function fromDb(row){
     weatherDependent:row.weather_dependent||'no',weatherNote:row.weather_note||'',
     steps:row.steps||[],materials:row.materials||[],tools:row.tools||[],
     taskNotes:row.task_notes||'',createdAt:row.created_at,
+    recurrenceType:row.recurrence_type||null,
+    recurrenceInterval:row.recurrence_interval||1,
+    recurrenceEndDate:row.recurrence_end_date||'',
+    recurrenceParentId:row.recurrence_parent_id||null,
     updates:(row.task_updates||[]).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(u=>({id:u.id,author:u.author,text:u.text,date:u.date,via:u.via}))
   };
 }
@@ -956,7 +1000,11 @@ function toDb(data){
     percent_complete:data.percentComplete||0,human_resources:data.humanResources||null,
     location:data.location||null,suggested_schedule:data.suggestedSchedule||null,
     weather_dependent:data.weatherDependent||'no',weather_note:data.weatherNote||null,
-    steps:data.steps,materials:data.materials,tools:data.tools,task_notes:data.taskNotes||null
+    steps:data.steps,materials:data.materials,tools:data.tools,task_notes:data.taskNotes||null,
+    recurrence_type:data.recurrenceType||null,
+    recurrence_interval:data.recurrenceInterval||1,
+    recurrence_end_date:data.recurrenceEndDate||null,
+    recurrence_parent_id:data.recurrenceParentId||null
   };
 }
 
@@ -1085,6 +1133,25 @@ async function loadData(){
     .eq('archived',isArchived).order('created_at',{ascending:true});
   if(error){console.error('loadData:',error);return;}
   tasks=(data||[]).map(fromDb);
+  if(!isArchived){
+    // Fix any tasks with assignees still stuck in 'created'
+    const stale=tasks.filter(t=>t.stage==='created'&&t.assignees.length>0);
+    for(const t of stale){
+      await sb.from('tasks').update({stage:'assigned'}).eq('id',t.id);
+      await logUpdate(t.id,'Stage auto-corrected to: Assigned (assignees already set)');
+    }
+    if(stale.length>0){
+      const{data:d0}=await sb.from('tasks').select('*, task_updates(*)')
+        .eq('archived',false).order('created_at',{ascending:true});
+      if(d0)tasks=d0.map(fromDb);
+    }
+    const spawned=await checkRecurring();
+    if(spawned>0){
+      const{data:d2}=await sb.from('tasks').select('*, task_updates(*)')
+        .eq('archived',false).order('created_at',{ascending:true});
+      if(d2)tasks=d2.map(fromDb);
+    }
+  }
   render();
 }
 async function loadProfiles(){
@@ -1143,10 +1210,11 @@ function renderList(){
     const sel=selectedIds.has(t.id);
     const isOpen=openId===t.id;
     const assigned=t.assignees.length>0;
-    const avC=assigned?avColor(t.assignees[0]):{bg:'var(--bg-tertiary)',fg:'var(--text-tertiary)'};
+    const avC=STAGE_AV[t.stage]||{bg:'var(--bg-tertiary)',fg:'var(--text-tertiary)'};
     const avLabel=assigned?initials(t.assignees[0]):'?';
     const extra=t.assignees.length>1?` +${t.assignees.length-1}`:'';
     const metaParts=[t.lineage?escHtml(t.lineage):'',pm.label+(extra?extra:'')].filter(Boolean).join(' · ');
+    const recurBadge=t.recurrenceType?'🔁 ':'';
     return`<div class="email-item">
       <div class="email-row${sel?' selected':''}${isOpen?' open':''}" onclick="toggleExpand('${t.id}')">
         <div class="er-check" onclick="event.stopPropagation()">
@@ -1154,7 +1222,7 @@ function renderList(){
         </div>
         <div class="er-avatar" style="background:${avC.bg};color:${avC.fg}">${avLabel}</div>
         <div class="er-body">
-          <div class="er-title">${escHtml(t.name)}</div>
+          <div class="er-title">${escHtml(t.name)}${recurBadge?` <span style="font-size:11px">🔁</span>`:''}</div>
           <div class="er-meta">${metaParts}</div>
         </div>
         <div class="er-right">
@@ -1318,7 +1386,6 @@ function taskExpandHtml(t){
     </div>
     <div class="panel-section">
       <div class="field-grid-2">
-        <div class="frl" style="grid-column:1">Stage</div><div class="frv" style="grid-column:2/5">${stageRow}</div>
         <div class="frl">Priority</div><div class="frv"><span class="badge ${pm.badge}">${pm.label}</span>${od?' <span class="badge badge-red">Overdue</span>':''}</div>
         ${t.assignees.length?`<div class="frl">Assigned</div><div class="frv" style="flex-wrap:wrap;gap:4px">${avRow}</div>`:''}
         ${t.dueDate?`<div class="frl">Due date</div><div class="frv" style="${od?'color:#A32D2D;font-weight:500':''}">${fmtDate(t.dueDate)}</div>`:''}
@@ -1329,6 +1396,7 @@ function taskExpandHtml(t){
         ${t.location?`<div class="frl">Location</div><div class="frv">${escHtml(t.location)}</div>`:''}
         ${t.weatherDependent==='yes'?`<div class="frl">Weather</div><div class="frv"><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#E24B4A;display:inline-block"></span>${t.weatherNote?escHtml(t.weatherNote):'Yes'}</span></div>`:''}
         ${t.suggestedSchedule?`<div class="frl">Schedule</div><div class="frv">${escHtml(t.suggestedSchedule)}</div>`:''}
+        ${t.recurrenceType?`<div class="frl">Repeats</div><div class="frv" style="grid-column:2/5">🔁 ${recurrenceLabel(t)}</div>`:''}
       </div>
     </div>
     ${t.description?`<div class="panel-section" style=""><div class="sec-label" style="margin-bottom:4px">Description</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.6">${escHtml(t.description)}</div></div>`:''}
@@ -1351,6 +1419,7 @@ function taskExpandHtml(t){
       ${showMoreBtn}
     </div>
     <div class="panel-actions">
+      <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update" style="align-self:flex-end;flex-shrink:0">🎤</button>
       <div style="flex:1">
         <textarea class="update-textarea" id="updateInput" style="height:42px"
           placeholder="Add a progress update… (Enter to post)"
@@ -1397,13 +1466,36 @@ function closeDetail(){
   renderList();
 }
 
+async function bumpToInProgress(id){
+  const t=tasks.find(x=>x.id===id);
+  if(!t||['inprogress','review','complete'].includes(t.stage))return;
+  const today=new Date().toISOString().split('T')[0];
+  const upd={stage:'inprogress'};
+  if(!t.startDate)upd.start_date=today;
+  await sb.from('tasks').update(upd).eq('id',id);
+  await logUpdate(id,'Stage auto-advanced to: In Progress');
+}
+
 async function changeStage(id,stage){
   const update={stage};
   if(stage==='complete')update.percent_complete=100;
+  // #5: stamp start_date when manually moving to In Progress
+  if(stage==='inprogress'){
+    const t=tasks.find(x=>x.id===id);
+    if(t&&!t.startDate)update.start_date=new Date().toISOString().split('T')[0];
+  }
   const{error}=await sb.from('tasks').update(update).eq('id',id);
   if(error){console.error('changeStage:',error);return;}
   const label=STAGE[stage]?.label||stage;
   await logUpdate(id,`Stage changed to: ${label}`);
+  if(stage==='complete'){
+    const t=tasks.find(x=>x.id===id);
+    if(t?.recurrenceType){
+      await sb.from('tasks').update({archived:true}).eq('id',id);
+      await loadData();
+      return; // task is archived — don't try to re-open it
+    }
+  }
   await loadData();openDetail(id);
 }
 
@@ -1413,7 +1505,19 @@ async function savePercent(id,val){
   if(error){console.error('savePercent:',error);return;}
   await logUpdate(id,`Progress updated to ${parsed}%`);
   const t=tasks.find(x=>x.id===id);
-  if(t){t.percentComplete=parsed;render();}
+  let effectiveStage=t?.stage;
+  // #3: assigned → inprogress when % > 0
+  if(parsed>0&&effectiveStage==='assigned'){
+    await bumpToInProgress(id);
+    effectiveStage='inprogress';
+  }
+  // #4: inprogress → review when % reaches 100
+  if(parsed===100&&effectiveStage==='inprogress'){
+    await sb.from('tasks').update({stage:'review'}).eq('id',id);
+    await logUpdate(id,'Stage auto-advanced to: Review');
+  }
+  await loadData();
+  if(openId===id)openDetail(id);
 }
 
 async function postUpdate(){
@@ -1425,11 +1529,21 @@ async function postUpdate(){
     date:new Date().toISOString().split('T')[0],via:'Web app'
   });
   if(error){console.error('postUpdate:',error);return;}
-  input.value='';await loadData();openDetail(openId);
+  input.value='';
+  // #2: assigned → inprogress when first update posted
+  const t=tasks.find(x=>x.id===openId);
+  if(t?.stage==='assigned')await bumpToInProgress(openId);
+  await loadData();openDetail(openId);
 }
 
 // ── VOICE INPUT ──
 async function toggleVoice(){
+  voiceTaskId=null; // general mode
+  if(voiceState.recording)stopVoiceInput();
+  else await startVoiceInput();
+}
+async function toggleTaskVoice(id){
+  voiceTaskId=id; // task-specific mode
   if(voiceState.recording)stopVoiceInput();
   else await startVoiceInput();
 }
@@ -1491,10 +1605,19 @@ function scheduleMicRelease(){
 async function processVoiceInput(mimeType){
   const blob=new Blob(voiceState.chunks,{type:mimeType});
   voiceState.chunks=[];
+  const taskCtx=voiceTaskId?tasks.find(x=>x.id===voiceTaskId):null;
   const context={
     tasks:tasks.map(t=>({id:t.id,name:t.name})),
     lineages:LINEAGES,
-    people:allProfiles.length?allProfiles.map(p=>p.name):[...new Set(tasks.flatMap(t=>t.assignees))].filter(Boolean)
+    people:allProfiles.length?allProfiles.map(p=>p.name):[...new Set(tasks.flatMap(t=>t.assignees))].filter(Boolean),
+    mode:voiceTaskId?'task':'general',
+    task_context:taskCtx?{
+      id:taskCtx.id,name:taskCtx.name,description:taskCtx.description,
+      stage:taskCtx.stage,assignees:taskCtx.assignees,lineage:taskCtx.lineage,
+      priority:taskCtx.priority,startDate:taskCtx.startDate,dueDate:taskCtx.dueDate,
+      percentComplete:taskCtx.percentComplete,location:taskCtx.location,
+      steps:taskCtx.steps,tools:taskCtx.tools
+    }:null
   };
   const fd=new FormData();
   fd.append('audio',blob,'rec.'+(mimeType.includes('mp4')?'mp4':'webm'));
@@ -1540,7 +1663,9 @@ async function processVoiceInput(mimeType){
 }
 
 function setVoiceBtn(state){
-  ['globalVoiceBtn','mobVoiceBtn'].forEach(id=>{
+  const ids=['globalVoiceBtn','mobVoiceBtn'];
+  if(voiceTaskId)ids.push(`taskVoiceBtn-${voiceTaskId}`);
+  ids.forEach(id=>{
     const btn=document.getElementById(id);
     if(!btn)return;
     btn.classList.toggle('recording',state==='recording');
@@ -1575,8 +1700,13 @@ function renderVoicePreview(result){
     return;
   }
   const edits=result.edits||{};
-  const keys=Object.keys(edits);
-  if(!keys.length){
+  const intent=result.intent||'edit';
+  const updateText=result.update_text||'';
+  const editKeys=Object.keys(edits);
+  const hasEdits=editKeys.length>0;
+  const hasUpdate=(intent==='update'||intent==='both')&&updateText;
+
+  if(!hasEdits&&!hasUpdate){
     el.innerHTML=`${taskLabel}
       <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
       <div style="font-size:12px;color:var(--text-tertiary)">No changes detected.</div>
@@ -1588,14 +1718,19 @@ function renderVoicePreview(result){
     followUpDate:'Follow-up',estimatedHours:'Est. hours',percentComplete:'% Complete',
     steps:'Steps',tools:'Tools',materials:'Materials',location:'Location',
     weatherDependent:'Weather dep.',notes:'Notes'};
-  const rows=keys.map(k=>{
-    const v=edits[k];
-    const display=Array.isArray(v)?v.join(', '):String(v);
-    return`<div class="voice-diff-row"><span class="voice-diff-label">${escHtml(LABELS[k]||k)}</span><span class="voice-diff-val">${escHtml(display)}</span></div>`;
-  }).join('');
+  const editSection=hasEdits?`
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);margin-bottom:5px">Field changes</div>
+    <div class="voice-diff">${editKeys.map(k=>{
+      const v=edits[k];
+      const display=Array.isArray(v)?v.join(', '):String(v);
+      return`<div class="voice-diff-row"><span class="voice-diff-label">${escHtml(LABELS[k]||k)}</span><span class="voice-diff-val">${escHtml(display)}</span></div>`;
+    }).join('')}</div>`:'';
+  const updateSection=hasUpdate?`
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);margin:${hasEdits?'10px':0} 0 5px">Progress update</div>
+    <div style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);padding:8px 10px;border-radius:var(--radius-sm);line-height:1.5">${escHtml(updateText)}</div>`:'';
   el.innerHTML=`${taskLabel}
     <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
-    <div class="voice-diff">${rows}</div>
+    ${editSection}${updateSection}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn-primary" style="font-size:12px;padding:5px 14px" onclick="confirmVoiceEdits()">Apply</button>
       <button class="btn-secondary" style="font-size:12px;padding:5px 14px" onclick="clearVoicePreview()">Cancel</button>
@@ -1658,16 +1793,47 @@ async function confirmVoiceEdits(){
     const t=tasks.find(x=>x.id===result.target_task_id);
     if(!t){alert('Could not find the target task.');return;}
     const changes=diffTask(t,{...t,...edits});
-    const merged={...t,...edits};
-    const{error}=await sb.from('tasks').update(toDb(merged)).eq('id',result.target_task_id);
-    if(error){console.error('voice apply:',error);return;}
-    const summary=changes.length
-      ?`Task updated via voice: ${changes.join('; ')}`
-      :'Task updated via voice';
-    await logUpdate(result.target_task_id,summary,'Voice');
+    const intent=result.intent||'edit';
+    const tid=result.target_task_id;
+    const author=currentProfile?.name||currentUser?.email||'Team member';
+
+    // Apply field edits
+    if((intent==='edit'||intent==='both')&&Object.keys(edits).length){
+      const merged={...t,...edits};
+      const{error}=await sb.from('tasks').update(toDb(merged)).eq('id',tid);
+      if(error){console.error('voice apply:',error);return;}
+      const summary=changes.length
+        ?`Task updated via voice: ${changes.join('; ')}`
+        :'Task updated via voice';
+      await logUpdate(tid,summary,'Voice');
+      // trigger stage automations
+      if(edits.percentComplete!==undefined){
+        const pct=parseInt(String(edits.percentComplete));
+        const reloaded=tasks.find(x=>x.id===tid);
+        let effectiveStage=merged.stage||reloaded?.stage;
+        if(pct>0&&effectiveStage==='assigned'){await bumpToInProgress(tid);effectiveStage='inprogress';}
+        if(pct===100&&effectiveStage==='inprogress'){
+          await sb.from('tasks').update({stage:'review'}).eq('id',tid);
+          await logUpdate(tid,'Stage auto-advanced to: Review');
+        }
+      }
+    }
+
+    // Post progress update
+    if((intent==='update'||intent==='both')&&result.update_text){
+      await sb.from('task_updates').insert({
+        task_id:tid,author,text:result.update_text,
+        date:new Date().toISOString().split('T')[0],via:'Voice'
+      });
+      // also bump stage if still assigned
+      const cur=tasks.find(x=>x.id===tid);
+      if(cur?.stage==='assigned')await bumpToInProgress(tid);
+    }
+
     clearVoicePreview();
+    voiceTaskId=null;
     await loadData();
-    openDetail(result.target_task_id);
+    openDetail(tid);
   }
 }
 
@@ -1845,14 +2011,21 @@ function openModal(editing){
     document.getElementById('fSchedule').value=t.suggestedSchedule||'';
     document.getElementById('fTools').value=(t.tools||[]).join(', ');
     document.getElementById('fNotes').value=t.taskNotes||'';
+    document.getElementById('fStart').value=t.startDate||'';
     document.getElementById('stepsWrap').innerHTML='';
     (t.steps||[]).forEach(s=>addStep(s));
     document.getElementById('matsWrap').innerHTML='';
     (t.materials||[]).forEach(m=>addMat(m.name,m.type));
+    const rType=document.getElementById('fRecurrenceType');
+    if(rType){rType.value=t.recurrenceType||'';toggleRecurrenceFields();}
+    const rInt=document.getElementById('fRecurrenceInterval');
+    if(rInt)rInt.value=t.recurrenceInterval||1;
+    const rEnd=document.getElementById('fRecurrenceEndDate');
+    if(rEnd)rEnd.value=t.recurrenceEndDate||'';
   } else {
     editId=null;
     document.getElementById('modalTitle').textContent='New task';
-    ['fName','fDesc','fCreator','fProject','fLocation','fDue',
+    ['fName','fDesc','fCreator','fProject','fLocation','fStart','fDue',
      'fHours','fFollowup','fSchedule','fTools','fNotes','fWeatherNote'].forEach(id=>{document.getElementById(id).value='';});
     populateAssigneePicker([]);
     document.getElementById('fStage').value='created';
@@ -1863,6 +2036,12 @@ function openModal(editing){
     document.getElementById('fPercent').value='0';
     document.getElementById('stepsWrap').innerHTML='';
     document.getElementById('matsWrap').innerHTML='';
+    const rType2=document.getElementById('fRecurrenceType');
+    if(rType2){rType2.value='';toggleRecurrenceFields();}
+    const rInt2=document.getElementById('fRecurrenceInterval');
+    if(rInt2)rInt2.value=1;
+    const rEnd2=document.getElementById('fRecurrenceEndDate');
+    if(rEnd2)rEnd2.value='';
   }
   toggleWeatherNote();
   document.getElementById('fName').classList.remove('err');
@@ -1871,6 +2050,72 @@ function openModal(editing){
 }
 function openModalStage(stage){openModal(false);document.getElementById('fStage').value=stage;}
 function closeModal(){document.getElementById('modalOverlay').classList.add('hidden');editId=null;}
+
+// ── RECURRENCE ──
+function calcNextDate(startDate,type,interval){
+  if(!startDate||!type)return null;
+  const d=new Date(startDate+'T00:00:00');
+  const n=parseInt(interval)||1;
+  if(type==='daily')d.setDate(d.getDate()+n);
+  else if(type==='weekly')d.setDate(d.getDate()+n*7);
+  else if(type==='monthly')d.setMonth(d.getMonth()+n);
+  else if(type==='yearly')d.setFullYear(d.getFullYear()+n);
+  else return null;
+  return d.toISOString().split('T')[0];
+}
+function recurrenceLabel(t){
+  if(!t.recurrenceType)return'';
+  const u={daily:'day',weekly:'week',monthly:'month',yearly:'year'};
+  const n=t.recurrenceInterval||1;
+  const unit=u[t.recurrenceType]||t.recurrenceType;
+  let s=n===1?`Every ${unit}`:`Every ${n} ${unit}s`;
+  if(t.recurrenceEndDate)s+=` until ${fmtDate(t.recurrenceEndDate)}`;
+  return s;
+}
+function toggleRecurrenceFields(){
+  const type=document.getElementById('fRecurrenceType')?.value;
+  const fields=document.getElementById('recurrenceFields');
+  if(fields)fields.classList.toggle('hidden',!type);
+}
+async function spawnNextRecurrence(t,nextStart){
+  let nextDue=null;
+  if(t.dueDate&&t.startDate){
+    const dur=new Date(t.dueDate+'T00:00:00')-new Date(t.startDate+'T00:00:00');
+    nextDue=new Date(new Date(nextStart+'T00:00:00').getTime()+dur).toISOString().split('T')[0];
+  }else if(t.dueDate){
+    nextDue=calcNextDate(t.dueDate,t.recurrenceType,t.recurrenceInterval);
+  }
+  const newTask={
+    ...toDb(t),
+    stage:'assigned',percent_complete:0,
+    start_date:nextStart,due_date:nextDue,
+    recurrence_parent_id:t.id,archived:false,
+  };
+  const{data:ins,error}=await sb.from('tasks').insert(newTask).select().single();
+  if(error){console.error('spawnNextRecurrence:',error);return;}
+  if(ins)await logUpdate(ins.id,`Recurring task auto-created from: ${t.name}`);
+}
+async function checkRecurring(){
+  const today=new Date().toISOString().split('T')[0];
+  const recurring=tasks.filter(t=>t.recurrenceType);
+  let spawned=0;
+  for(const t of recurring){
+    const hasChild=tasks.some(x=>x.recurrenceParentId===t.id);
+    if(hasChild)continue;
+    const base=t.startDate||t.createdAt?.split('T')[0]||today;
+    const nextStart=calcNextDate(base,t.recurrenceType,t.recurrenceInterval);
+    if(!nextStart)continue;
+    if(t.recurrenceEndDate&&nextStart>t.recurrenceEndDate)continue;
+    if(today>=nextStart){
+      await spawnNextRecurrence(t,nextStart);
+      spawned++;
+      if(t.stage==='complete'){
+        await sb.from('tasks').update({archived:true}).eq('id',t.id);
+      }
+    }
+  }
+  return spawned;
+}
 
 // ── ACTIVITY LOG ──
 async function logUpdate(taskId,text,via='System'){
@@ -1917,13 +2162,17 @@ async function saveTask(){
     weatherNote:document.getElementById('fWeatherNote').value.trim(),
     location:document.getElementById('fLocation').value.trim(),
     assignees:getAssignees(),
+    startDate:document.getElementById('fStart').value,
     dueDate:document.getElementById('fDue').value,
     estimatedHours:parseFloat(document.getElementById('fHours').value)||0,
     percentComplete:parseInt(document.getElementById('fPercent').value)||0,
     followUpDate:document.getElementById('fFollowup').value,
     suggestedSchedule:document.getElementById('fSchedule').value.trim(),
     steps:getSteps(),materials:getMats(),tools:parse('fTools'),
-    taskNotes:document.getElementById('fNotes').value.trim()
+    taskNotes:document.getElementById('fNotes').value.trim(),
+    recurrenceType:document.getElementById('fRecurrenceType')?.value||null,
+    recurrenceInterval:parseInt(document.getElementById('fRecurrenceInterval')?.value)||1,
+    recurrenceEndDate:document.getElementById('fRecurrenceEndDate')?.value||''
   };
   // Auto-advance stage: created → assigned when assignees added
   if(data.assignees.length>0&&data.stage==='created')data.stage='assigned';
