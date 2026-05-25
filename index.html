@@ -1662,8 +1662,12 @@ async function processVoiceInput(mimeType){
   }
 }
 
+function retryVoice(){
+  if(voiceTaskId)toggleTaskVoice(voiceTaskId);
+  else toggleVoice();
+}
 function setVoiceBtn(state){
-  const ids=['globalVoiceBtn','mobVoiceBtn'];
+  const ids=['globalVoiceBtn','mobVoiceBtn','voiceRetryBtn'];
   if(voiceTaskId)ids.push(`taskVoiceBtn-${voiceTaskId}`);
   ids.forEach(id=>{
     const btn=document.getElementById(id);
@@ -1696,7 +1700,10 @@ function renderVoicePreview(result){
     el.innerHTML=`${taskLabel}
       <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
       <div class="voice-clarify">${escHtml(result.clarification_needed||'Unclear which task you meant.')}</div>
-      <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-top:8px" onclick="clearVoicePreview()">Dismiss</button>`;
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn-voice" id="voiceRetryBtn" onclick="retryVoice()" title="Re-record">🎤</button>
+        <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="clearVoicePreview()">Dismiss</button>
+      </div>`;
     return;
   }
   const edits=result.edits||{};
@@ -1710,7 +1717,10 @@ function renderVoicePreview(result){
     el.innerHTML=`${taskLabel}
       <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
       <div style="font-size:12px;color:var(--text-tertiary)">No changes detected.</div>
-      <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-top:8px" onclick="clearVoicePreview()">Dismiss</button>`;
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn-voice" id="voiceRetryBtn" onclick="retryVoice()" title="Re-record">🎤</button>
+        <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="clearVoicePreview()">Dismiss</button>
+      </div>`;
     return;
   }
   const LABELS={name:'Name',description:'Description',assignees:'Assignees',lineage:'Lineage',
@@ -1731,8 +1741,9 @@ function renderVoicePreview(result){
   el.innerHTML=`${taskLabel}
     <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
     ${editSection}${updateSection}
-    <div style="display:flex;gap:8px;margin-top:12px">
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
       <button class="btn-primary" style="font-size:12px;padding:5px 14px" onclick="confirmVoiceEdits()">Apply</button>
+      <button class="btn-voice" id="voiceRetryBtn" onclick="retryVoice()" title="Re-record to correct">🎤</button>
       <button class="btn-secondary" style="font-size:12px;padding:5px 14px" onclick="clearVoicePreview()">Cancel</button>
     </div>`;
 }
