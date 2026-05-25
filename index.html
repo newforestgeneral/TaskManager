@@ -647,7 +647,7 @@
 <!-- MAIN -->
 <div class="main">
   <div class="mobile-header">
-    <button class="mobile-menu-btn" onclick="openMobSidebar()">☰</button>
+    <button class="mobile-menu-btn" id="mobMenuBtn" onclick="toggleMobSidebar()">☰</button>
     <div style="font-size:15px;font-weight:600;flex:1">Task Tracker</div>
     <button id="mobVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
     <button class="btn-primary manager-only" style="padding:6px 12px;font-size:12px" onclick="openModal()">+ Task</button>
@@ -941,11 +941,11 @@ const PRIORITY={
   urgent:{label:'Urgent', badge:'badge-red',  color:'#E24B4A'}
 };
 const STAGE_AV={
-  created:   {bg:'#EEEDFE',fg:'#3C3489'},
-  assigned:  {bg:'#F1EFE8',fg:'#555552'},
-  inprogress:{bg:'#E6F1FB',fg:'#0C447C'},
-  review:    {bg:'#FAEEDA',fg:'#633806'},
-  complete:  {bg:'#EAF3DE',fg:'#27500A'}
+  created:   {bg:'#F1F5F9',fg:'#64748B'},
+  assigned:  {bg:'#DBEAFE',fg:'#1D4ED8'},
+  inprogress:{bg:'#EDE9FE',fg:'#6D28D9'},
+  review:    {bg:'#FEF3C7',fg:'#B45309'},
+  complete:  {bg:'#D1FAE5',fg:'#065F46'}
 };
 const AV_COLS=[
   {bg:'#EEEDFE',fg:'#3C3489'},{bg:'#E6F1FB',fg:'#0C447C'},
@@ -1665,11 +1665,65 @@ async function processVoiceInput(mimeType){
   }
 }
 
+function voicePanelTaskLabel(result){
+  if(!result)return'';
+  const isNew=!result.target_task_id;
+  const taskName=isNew
+    ?(result.edits?.name||result.target_task_name||'Untitled task')
+    :(result.target_task_name||'Unknown task');
+  return isNew
+    ?`<div class="voice-panel-header creating">
+        <div class="voice-panel-action creating">Creating new task</div>
+        <div class="voice-panel-taskname">${escHtml(taskName)}</div>
+      </div>`
+    :`<div class="voice-panel-header editing">
+        <div class="voice-panel-action editing">Editing task</div>
+        <div class="voice-panel-taskname">${escHtml(taskName)}</div>
+      </div>`;
+}
+function voicePanelFieldsHtml(result){
+  if(!result)return'';
+  const edits=result.edits||{};
+  const intent=result.intent||'edit';
+  const updateText=result.update_text||'';
+  const LABELS={name:'Name',description:'Description',assignees:'Assignees',lineage:'Lineage',
+    stage:'Stage',priority:'Priority',startDate:'Start date',dueDate:'Due date',
+    followUpDate:'Follow-up',estimatedHours:'Est. hours',percentComplete:'% Complete',
+    steps:'Steps',tools:'Tools',materials:'Materials',location:'Location',
+    weatherDependent:'Weather dep.',notes:'Notes'};
+  const editKeys=Object.keys(edits).filter(k=>{
+    const v=edits[k];
+    if(v===null||v===undefined||v==='')return false;
+    if(Array.isArray(v)&&v.length===0)return false;
+    return true;
+  });
+  const hasEdits=editKeys.length>0;
+  const hasUpdate=(intent==='update'||intent==='both')&&updateText;
+  const editSection=hasEdits?`
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);margin-bottom:5px">Field changes</div>
+    <div class="voice-diff">${editKeys.map(k=>{
+      const v=edits[k];
+      const display=Array.isArray(v)?v.join(', '):String(v);
+      return`<div class="voice-diff-row"><span class="voice-diff-label">${escHtml(LABELS[k]||k)}</span><span class="voice-diff-val">${escHtml(display)}</span></div>`;
+    }).join('')}</div>`:'';
+  const updateSection=hasUpdate?`
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);margin:${hasEdits?'10px':0} 0 5px">Progress update</div>
+    <div style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);padding:8px 10px;border-radius:var(--radius-sm);line-height:1.5">${escHtml(updateText)}</div>`:'';
+  return editSection+updateSection;
+}
 function showVoiceListening(){
   const el=document.getElementById('voicePanel');
   if(!el)return;
   el.style.display='block';
-  el.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:4px 0">
+  const prior=voicePendingResult;
+  const contextHtml=prior?`
+    <div style="opacity:0.55;margin-bottom:8px">
+      ${voicePanelTaskLabel(prior)}
+      <div class="voice-transcript">"${escHtml(prior.transcript||'')}"</div>
+      ${voicePanelFieldsHtml(prior)}
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:8px 0">`:'';
+  el.innerHTML=`${contextHtml}<div style="display:flex;align-items:center;gap:10px;padding:4px 0">
     <button class="btn-voice recording" id="voiceRetryBtn" onclick="stopVoiceInput()" title="Tap to stop">⏹</button>
     <span style="font-size:13px;color:var(--text-secondary)">Listening…</span>
   </div>`;
@@ -1717,19 +1771,7 @@ function renderVoicePreview(result){
   const el=document.getElementById('voicePanel');
   if(!el)return;
   el.style.display='block';
-  const isNew=!result.target_task_id;
-  const taskName=isNew
-    ?(result.edits?.name||result.target_task_name||'Untitled task')
-    :(result.target_task_name||'Unknown task');
-  const taskLabel=isNew
-    ?`<div class="voice-panel-header creating">
-        <div class="voice-panel-action creating">Creating new task</div>
-        <div class="voice-panel-taskname">${escHtml(taskName)}</div>
-      </div>`
-    :`<div class="voice-panel-header editing">
-        <div class="voice-panel-action editing">Editing task</div>
-        <div class="voice-panel-taskname">${escHtml(taskName)}</div>
-      </div>`;
+  const taskLabel=voicePanelTaskLabel(result);
   if(result.ambiguous){
     el.innerHTML=`${taskLabel}
       <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
@@ -1743,10 +1785,14 @@ function renderVoicePreview(result){
   const edits=result.edits||{};
   const intent=result.intent||'edit';
   const updateText=result.update_text||'';
-  const editKeys=Object.keys(edits);
-  const hasEdits=editKeys.length>0;
+  const filteredKeys=Object.keys(edits).filter(k=>{
+    const v=edits[k];
+    if(v===null||v===undefined||v==='')return false;
+    if(Array.isArray(v)&&v.length===0)return false;
+    return true;
+  });
+  const hasEdits=filteredKeys.length>0;
   const hasUpdate=(intent==='update'||intent==='both')&&updateText;
-
   if(!hasEdits&&!hasUpdate){
     el.innerHTML=`${taskLabel}
       <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
@@ -1757,24 +1803,10 @@ function renderVoicePreview(result){
       </div>`;
     return;
   }
-  const LABELS={name:'Name',description:'Description',assignees:'Assignees',lineage:'Lineage',
-    stage:'Stage',priority:'Priority',startDate:'Start date',dueDate:'Due date',
-    followUpDate:'Follow-up',estimatedHours:'Est. hours',percentComplete:'% Complete',
-    steps:'Steps',tools:'Tools',materials:'Materials',location:'Location',
-    weatherDependent:'Weather dep.',notes:'Notes'};
-  const editSection=hasEdits?`
-    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);margin-bottom:5px">Field changes</div>
-    <div class="voice-diff">${editKeys.map(k=>{
-      const v=edits[k];
-      const display=Array.isArray(v)?v.join(', '):String(v);
-      return`<div class="voice-diff-row"><span class="voice-diff-label">${escHtml(LABELS[k]||k)}</span><span class="voice-diff-val">${escHtml(display)}</span></div>`;
-    }).join('')}</div>`:'';
-  const updateSection=hasUpdate?`
-    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-tertiary);margin:${hasEdits?'10px':0} 0 5px">Progress update</div>
-    <div style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);padding:8px 10px;border-radius:var(--radius-sm);line-height:1.5">${escHtml(updateText)}</div>`:'';
+  const fieldsHtml=voicePanelFieldsHtml(result);
   el.innerHTML=`${taskLabel}
     <div class="voice-transcript">"${escHtml(result.transcript||'')}"</div>
-    ${editSection}${updateSection}
+    ${fieldsHtml}
     <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
       <button class="btn-primary" style="font-size:12px;padding:5px 14px" onclick="confirmVoiceEdits()">Apply</button>
       <button class="btn-voice" id="voiceRetryBtn" onclick="retryVoice()" title="Re-record to correct">🎤</button>
@@ -2365,8 +2397,10 @@ function toggleLineageSidebar(){
 // ── VIEWS ──
 function setView(){renderList();}
 function toggleFilterBar(){document.getElementById('filterBar').classList.toggle('hidden');}
-function openMobSidebar(){document.getElementById('sidebar').classList.add('mob-open');document.getElementById('mobOverlay').classList.add('open');}
-function closeMobSidebar(){document.getElementById('sidebar').classList.remove('mob-open');document.getElementById('mobOverlay').classList.remove('open');}
+function openMobSidebar(){document.getElementById('sidebar').classList.add('mob-open');document.getElementById('mobOverlay').classList.add('open');updateMobMenuBtn();}
+function closeMobSidebar(){document.getElementById('sidebar').classList.remove('mob-open');document.getElementById('mobOverlay').classList.remove('open');updateMobMenuBtn();}
+function toggleMobSidebar(){document.getElementById('sidebar').classList.contains('mob-open')?closeMobSidebar():openMobSidebar();}
+function updateMobMenuBtn(){const btn=document.getElementById('mobMenuBtn');if(!btn)return;const open=document.getElementById('sidebar').classList.contains('mob-open');btn.textContent=open?'✕':'☰';}
 function setBottomNav(id){document.querySelectorAll('.bottom-nav-item').forEach(b=>b.classList.remove('active'));document.getElementById(id)?.classList.add('active');}
 function toggleMobFilter(){const fb=document.getElementById('filterBar');fb.style.display=fb.style.display==='flex'?'':'flex';}
 
