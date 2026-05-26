@@ -408,14 +408,6 @@
       font-size:18px;cursor:pointer;color:var(--text-secondary);border-radius:6px;
       display:flex;align-items:center;justify-content:center}
     .mobile-menu-btn:hover{background:var(--bg-secondary)}
-    .bottom-nav{display:none;background:var(--bg-primary);border-top:0.5px solid var(--border);
-      padding:6px 0 14px;flex-shrink:0}
-    .bottom-nav-inner{display:flex;justify-content:space-around}
-    .bottom-nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;
-      padding:5px 16px;cursor:pointer;color:var(--text-tertiary);font-size:10px;
-      border-radius:8px;transition:color 0.12s;border:none;background:transparent;font-family:inherit}
-    .bottom-nav-item.active{color:var(--accent)}
-    .bottom-nav-item .nav-ico{font-size:19px;line-height:1}
     .mob-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.32);z-index:300}
     .mob-overlay.open{display:block}
 
@@ -427,7 +419,6 @@
       .topbar{display:none}
       .filter-bar{display:none}
       .filter-bar.mob-show{display:flex}
-      .bottom-nav{display:block}
       .list-container{padding:10px 12px}
       .expand-actions .btn-secondary{font-size:11px;padding:4px 8px}
     }
@@ -727,16 +718,6 @@
     <div class="email-list" id="listBody"></div>
   </div>
 
-  <div class="bottom-nav">
-    <div class="bottom-nav-inner">
-      <button class="bottom-nav-item active" id="bnList">
-        <span class="nav-ico">≡</span>Tasks</button>
-      <button class="bottom-nav-item manager-only" onclick="openModal()">
-        <span class="nav-ico">＋</span>New</button>
-      <button class="bottom-nav-item" onclick="toggleMobFilter()">
-        <span class="nav-ico">⊟</span>Filter</button>
-    </div>
-  </div>
 </div>
 
 
@@ -749,6 +730,7 @@
     </div>
     <div class="modal-body">
 
+      <!-- IDENTITY -->
       <div class="form-group">
         <label class="form-label">Task name *</label>
         <input class="form-input" id="fName" placeholder="e.g. Install generator unit" />
@@ -757,18 +739,6 @@
         <label class="form-label">Description</label>
         <textarea class="form-textarea" id="fDesc" placeholder="What needs to be done…"></textarea>
       </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Creator name</label>
-          <input class="form-input" id="fCreator" placeholder="e.g. Manager" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Project</label>
-          <input class="form-input" id="fProject" placeholder="e.g. Site A – Phase 1" />
-        </div>
-      </div>
-
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Stage</label>
@@ -791,7 +761,6 @@
           </select>
         </div>
       </div>
-
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Priority</label>
@@ -808,6 +777,56 @@
         </div>
       </div>
 
+      <!-- PEOPLE -->
+      <div class="form-group">
+        <label class="form-label">Assigned to</label>
+        <div class="assignee-dropdown" id="fAssigneesWrap">
+          <button type="button" class="assignee-dd-trigger" id="assigneeDdTrigger"
+            onclick="toggleAssigneeDropdown(event)">
+            <div class="assignee-dd-chips" id="assigneeDdChips">
+              <span class="assignee-dd-placeholder">No assignees</span>
+            </div>
+            <span class="assignee-dd-caret">▾</span>
+          </button>
+          <div class="assignee-dd-menu" id="assigneeDdMenu"></div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Creator name</label>
+        <input class="form-input" id="fCreator" placeholder="e.g. Manager" />
+      </div>
+
+      <!-- SCHEDULE -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Start date</label>
+          <input class="form-input" type="date" id="fStart" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Due date</label>
+          <input class="form-input" type="date" id="fDue" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Estimated hours</label>
+          <input class="form-input" type="number" id="fHours" placeholder="e.g. 24" min="0" step="0.5" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">% complete</label>
+          <input class="form-input" type="number" id="fPercent" placeholder="0" min="0" max="100" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Follow-up date</label>
+        <input class="form-input" type="date" id="fFollowup" />
+      </div>
+
+      <!-- LOCATION & CONDITIONS -->
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input class="form-input" id="fLocation" placeholder="e.g. Site A – Floor 2, east wing" />
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Weather dependent</label>
@@ -822,58 +841,7 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Location</label>
-        <input class="form-input" id="fLocation" placeholder="e.g. Site A – Floor 2, east wing" />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Assigned to</label>
-        <div class="assignee-dropdown" id="fAssigneesWrap">
-          <button type="button" class="assignee-dd-trigger" id="assigneeDdTrigger"
-            onclick="toggleAssigneeDropdown(event)">
-            <div class="assignee-dd-chips" id="assigneeDdChips">
-              <span class="assignee-dd-placeholder">No assignees</span>
-            </div>
-            <span class="assignee-dd-caret">▾</span>
-          </button>
-          <div class="assignee-dd-menu" id="assigneeDdMenu"></div>
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Start date</label>
-          <input class="form-input" type="date" id="fStart" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Due date</label>
-          <input class="form-input" type="date" id="fDue" />
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Estimated hours</label>
-          <input class="form-input" type="number" id="fHours" placeholder="e.g. 24" min="0" step="0.5" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">% complete</label>
-          <input class="form-input" type="number" id="fPercent" placeholder="0" min="0" max="100" />
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Follow-up date</label>
-          <input class="form-input" type="date" id="fFollowup" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Suggested schedule</label>
-          <input class="form-input" id="fSchedule" placeholder="e.g. Mon–Wed, 7am–4pm" />
-        </div>
-      </div>
-
+      <!-- HOW-TO -->
       <div class="form-section-label">Process steps</div>
       <div class="dyn-list" id="stepsWrap"></div>
       <button class="btn-add-row" onclick="addStep()">+ Add step</button>
@@ -888,11 +856,17 @@
         <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">Comma separated</div>
       </div>
 
+      <!-- NOTES / ADMIN -->
       <div class="form-section-label">Task notes</div>
       <div class="form-group" style="margin-top:0">
         <textarea class="form-textarea" id="fNotes" placeholder="Internal notes, reminders, cautions…"></textarea>
       </div>
+      <div class="form-group">
+        <label class="form-label">Project</label>
+        <input class="form-input" id="fProject" placeholder="e.g. Site A – Phase 1" />
+      </div>
 
+      <!-- RECURRENCE -->
       <div class="form-section-label manager-only">Recurrence</div>
       <div class="manager-only">
         <div class="form-group" style="margin-top:0">
@@ -932,6 +906,9 @@
 const SUPABASE_URL='https://tymspwfnykujydgzzzhd.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5bXNwd2ZueWt1anlkZ3p6emhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDU0NTksImV4cCI6MjA5Mjk4MTQ1OX0.2yB3YB9Ht3HtyELGOoRoFq22qXYM2XOSPi5UWd9_IKY';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+// Hard-coded redirect for password reset — never trust window.location.href.
+// Update this to your production domain before deploying to Vercel.
+const APP_ORIGIN='https://newforest-tasks.vercel.app';
 
 const STAGE={
   created:   {label:'Created',    color:'#534AB7',badge:'badge-purple'},
@@ -1067,7 +1044,7 @@ async function sendPasswordReset(){
   if(!email){setLoginMsg('Enter your email address.','error');return;}
   const btn=document.getElementById('resetBtn');
   btn.disabled=true;setLoginMsg('Sending…');
-  const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});
+  const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:APP_ORIGIN});
   btn.disabled=false;
   if(error){setLoginMsg(error.message,'error');return;}
   setLoginMsg('✓ Check your email for a reset link.','success');
@@ -1246,12 +1223,6 @@ function renderList(){
   SECTION_ORDER.forEach(s=>{
     const group=groups[s];
     if(!group.length)return;
-    const sm=STAGE[s];
-    html+=`<div class="list-section-header">
-      <span class="lsh-dot" style="background:${sm.color}"></span>
-      <span class="lsh-title">${SECTION_LABELS[s]}</span>
-      <span class="lsh-count">${group.length}</span>
-    </div>`;
     html+=group.map(taskRow).join('');
   });
   el.innerHTML=html;
@@ -1354,7 +1325,7 @@ function taskExpandHtml(t){
   const reversedUpdates=visibleUpdates.slice().reverse();
   const UPDATES_SHOWN=3;
   const updatesHtml=reversedUpdates.map((u,i)=>{
-    const c=avColor(u.author);const uid=u.id||'';const safeText=u.text.replace(/'/g,"\\'");
+    const c=avColor(u.author);const uid=u.id||'';
     const hidden=i>=UPDATES_SHOWN;
     return`<div class="update-item${hidden?' upd-extra':''}" id="ui-${uid}"${hidden?' style="display:none"':''}>
       <div class="update-header">
@@ -1362,7 +1333,7 @@ function taskExpandHtml(t){
         <span class="update-author">${escHtml(u.author)}</span>
         <span class="update-date">${fmtDate(u.date)}</span>
         <span style="margin-left:auto;display:flex;gap:6px">
-          <button class="upd-btn" onclick="editUpdate('${uid}','${safeText}')">Edit</button>
+          <button class="upd-btn" data-uid="${uid}" onclick="editUpdateBtn(this)">Edit</button>
           ${isManager?`<button class="upd-btn upd-del" onclick="deleteUpdate('${uid}')">Delete</button>`:''}
         </span>
       </div>
@@ -1391,28 +1362,28 @@ function taskExpandHtml(t){
         <button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="closeDetail()">✕</button>
       </div>
     </div>
+    ${t.description?`<div class="panel-section"><div class="sec-label" style="margin-bottom:4px">Description</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.6">${escHtml(t.description)}</div></div>`:''}
     <div class="panel-section">
       <div class="field-grid-2">
         <div class="frl">Priority</div><div class="frv"><span class="badge ${pm.badge}">${pm.label}</span>${od?' <span class="badge badge-red">Overdue</span>':''}</div>
         ${t.assignees.length?`<div class="frl">Assigned</div><div class="frv" style="flex-wrap:wrap;gap:4px">${avRow}</div>`:''}
+        ${t.humanResources?`<div class="frl">Resources</div><div class="frv">${t.humanResources} people</div>`:''}
+        ${t.startDate?`<div class="frl">Start date</div><div class="frv">${fmtDate(t.startDate)}</div>`:''}
         ${t.dueDate?`<div class="frl">Due date</div><div class="frv" style="${od?'color:#A32D2D;font-weight:500':''}">${fmtDate(t.dueDate)}</div>`:''}
         ${t.followUpDate?`<div class="frl">Follow-up</div><div class="frv">${fmtDate(t.followUpDate)}</div>`:''}
         ${t.estimatedHours?`<div class="frl">Est. hours</div><div class="frv">${t.estimatedHours} hrs</div>`:''}
         <div class="frl">% complete</div><div class="frv">${pctRow}</div>
-        ${t.humanResources?`<div class="frl">Resources</div><div class="frv">${t.humanResources} people</div>`:''}
+        ${t.recurrenceType?`<div class="frl">Repeats</div><div class="frv">🔁 ${recurrenceLabel(t)}</div>`:''}
         ${t.location?`<div class="frl">Location</div><div class="frv">${escHtml(t.location)}</div>`:''}
         ${t.weatherDependent==='yes'?`<div class="frl">Weather</div><div class="frv"><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#E24B4A;display:inline-block"></span>${t.weatherNote?escHtml(t.weatherNote):'Yes'}</span></div>`:''}
-        ${t.suggestedSchedule?`<div class="frl">Schedule</div><div class="frv">${escHtml(t.suggestedSchedule)}</div>`:''}
-        ${t.recurrenceType?`<div class="frl">Repeats</div><div class="frv" style="grid-column:2/5">🔁 ${recurrenceLabel(t)}</div>`:''}
       </div>
     </div>
-    ${t.description?`<div class="panel-section" style=""><div class="sec-label" style="margin-bottom:4px">Description</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.6">${escHtml(t.description)}</div></div>`:''}
-    ${(t.steps||[]).length?`<div class="panel-section" style=""><div class="sec-label" style="margin-bottom:4px">Steps</div>${stepsHtml}</div>`:''}
-    ${(t.materials||[]).length||(t.tools||[]).length?`<div class="panel-section" style="">
+    ${(t.steps||[]).length?`<div class="panel-section"><div class="sec-label" style="margin-bottom:4px">Steps</div>${stepsHtml}</div>`:''}
+    ${(t.materials||[]).length||(t.tools||[]).length?`<div class="panel-section">
       ${(t.materials||[]).length?`<div class="sec-label" style="margin-bottom:4px">Materials</div>${matsHtml}`:''}
       ${(t.tools||[]).length?`<div class="sec-label" style="margin-top:${(t.materials||[]).length?'8px':'0'};margin-bottom:4px">Tools</div><div style="display:flex;flex-wrap:wrap;gap:3px">${toolsHtml}</div>`:''}
     </div>`:''}
-    ${t.taskNotes?`<div class="panel-section" style=""><div class="sec-label" style="margin-bottom:4px">Notes</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.5;background:var(--bg-tertiary);padding:8px 10px;border-radius:var(--radius-sm)">${escHtml(t.taskNotes)}</div></div>`:''}
+    ${t.taskNotes?`<div class="panel-section"><div class="sec-label" style="margin-bottom:4px">Notes</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.5;background:var(--bg-tertiary);padding:8px 10px;border-radius:var(--radius-sm)">${escHtml(t.taskNotes)}</div></div>`:''}
     <div class="panel-section" style="">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div class="sec-label" style="margin-bottom:0">Photos</div>
@@ -1937,6 +1908,12 @@ async function confirmVoiceEdits(){
 }
 
 
+// Triggered from the data-uid button — reads uid from the DOM, never from an interpolated string.
+function editUpdateBtn(btn){
+  const uid=btn.dataset.uid;
+  const textEl=document.getElementById('ut-'+uid);
+  editUpdate(uid,textEl?textEl.textContent:'');
+}
 async function editUpdate(uid,currentText){
   const el=document.getElementById('ut-'+uid);
   if(!el)return;
@@ -1946,9 +1923,15 @@ async function editUpdate(uid,currentText){
   el.innerHTML=`<textarea class="update-textarea" style="margin:4px 0;min-height:60px">${escHtml(orig)}</textarea>
     <div style="display:flex;gap:6px;margin-top:4px">
       <button class="btn-primary" style="font-size:12px;padding:4px 10px" onclick="saveUpdateEdit('${uid}')">Save</button>
-      <button class="btn-secondary" style="font-size:12px;padding:4px 10px" onclick="cancelUpdateEdit('${uid}','${currentText.replace(/'/g,"\\'")}')">Cancel</button>
+      <button class="btn-secondary" style="font-size:12px;padding:4px 10px" data-uid="${uid}" onclick="cancelUpdateEditBtn(this)">Cancel</button>
     </div>`;
   el.querySelector('textarea').focus();
+}
+// Cancel: reads the current textarea value from the DOM — no text injected into onclick.
+function cancelUpdateEditBtn(btn){
+  const uid=btn.dataset.uid;
+  const ta=document.getElementById('ut-'+uid)?.querySelector('textarea');
+  cancelUpdateEdit(uid,ta?ta.defaultValue:'');
 }
 function cancelUpdateEdit(uid,orig){
   const el=document.getElementById('ut-'+uid);
@@ -2107,7 +2090,6 @@ function openModal(editing){
     document.getElementById('fHours').value=t.estimatedHours||'';
     document.getElementById('fPercent').value=t.percentComplete||0;
     document.getElementById('fFollowup').value=t.followUpDate||'';
-    document.getElementById('fSchedule').value=t.suggestedSchedule||'';
     document.getElementById('fTools').value=(t.tools||[]).join(', ');
     document.getElementById('fNotes').value=t.taskNotes||'';
     document.getElementById('fStart').value=t.startDate||'';
@@ -2125,7 +2107,7 @@ function openModal(editing){
     editId=null;
     document.getElementById('modalTitle').textContent='New task';
     ['fName','fDesc','fCreator','fProject','fLocation','fStart','fDue',
-     'fHours','fFollowup','fSchedule','fTools','fNotes','fWeatherNote'].forEach(id=>{document.getElementById(id).value='';});
+     'fHours','fFollowup','fTools','fNotes','fWeatherNote'].forEach(id=>{document.getElementById(id).value='';});
     populateAssigneePicker([]);
     document.getElementById('fStage').value='created';
     document.getElementById('fLineage').value='';
@@ -2266,7 +2248,6 @@ async function saveTask(){
     estimatedHours:parseFloat(document.getElementById('fHours').value)||0,
     percentComplete:parseInt(document.getElementById('fPercent').value)||0,
     followUpDate:document.getElementById('fFollowup').value,
-    suggestedSchedule:document.getElementById('fSchedule').value.trim(),
     steps:getSteps(),materials:getMats(),tools:parse('fTools'),
     taskNotes:document.getElementById('fNotes').value.trim(),
     recurrenceType:document.getElementById('fRecurrenceType')?.value||null,
@@ -2406,8 +2387,6 @@ function toggleFilterBar(){document.getElementById('filterBar').classList.toggle
 function openMobSidebar(){document.getElementById('sidebar').classList.add('mob-open');document.getElementById('mobOverlay').classList.add('open');}
 function closeMobSidebar(){document.getElementById('sidebar').classList.remove('mob-open');document.getElementById('mobOverlay').classList.remove('open');}
 function toggleMobSidebar(){document.getElementById('sidebar').classList.contains('mob-open')?closeMobSidebar():openMobSidebar();}
-function setBottomNav(id){document.querySelectorAll('.bottom-nav-item').forEach(b=>b.classList.remove('active'));document.getElementById(id)?.classList.add('active');}
-function toggleMobFilter(){const fb=document.getElementById('filterBar');fb.style.display=fb.style.display==='flex'?'':'flex';}
 
 
 // ── PHOTOS ──
@@ -2421,21 +2400,23 @@ async function loadPhotos(taskId){
   grid.innerHTML=data.map(p=>{
     const{data:urlData}=sb.storage.from('task-photos').getPublicUrl(p.path);
     const url=urlData.publicUrl;
-    console.log('Photo URL:',url);
+    // Use data-* attributes — never interpolate url/path/id into onclick strings
     return`<div class="photo-thumb">
-      <img src="${url}" onclick="openLightbox('${url}')" loading="lazy"
+      <img src="${escHtml(url)}" data-url="${escHtml(url)}" onclick="openLightboxBtn(this)" loading="lazy"
         onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='none');this.parentElement.innerHTML='<span style=\'color:var(--text-tertiary);font-size:11px;padding:4px\'>Error</span>'" />
-      ${isManager?`<button class="photo-del" onclick="deletePhoto('${p.id}','${p.path}')">✕</button>`:''}
+      ${isManager?`<button class="photo-del" data-photo-id="${escHtml(p.id)}" data-photo-path="${escHtml(p.path)}" onclick="deletePhotoBtn(this)">✕</button>`:''}
     </div>`;
   }).join('');
 }
 
 async function uploadPhoto(e,taskId){
   const files=[...e.target.files];if(!files.length)return;
+  const ALLOWED_EXTS=['jpg','jpeg','png','gif','webp','heic','heif'];
   const grid=document.getElementById('photoGrid');
   if(grid)grid.innerHTML='<span style="color:var(--text-tertiary);font-size:12px">Uploading…</span>';
   for(const file of files){
-    const ext=file.name.split('.').pop()||'jpg';
+    const ext=(file.name.split('.').pop()||'').toLowerCase();
+    if(!ALLOWED_EXTS.includes(ext)){alert(`File type ".${ext}" is not allowed. Accepted: ${ALLOWED_EXTS.join(', ')}`);continue;}
     const path=`${taskId}/${crypto.randomUUID()}.${ext}`;
     const{error:upErr}=await sb.storage.from('task-photos').upload(path,file,{upsert:false});
     if(upErr){alert('Upload failed: '+upErr.message);continue;}
@@ -2451,6 +2432,10 @@ async function deletePhoto(photoId,path){
   await sb.from('task_photos').delete().eq('id',photoId);
   loadPhotos(openId);
 }
+
+// Button helpers — read url/id/path from data-* attributes, never from onclick strings
+function openLightboxBtn(img){openLightbox(img.dataset.url);}
+function deletePhotoBtn(btn){deletePhoto(btn.dataset.photoId,btn.dataset.photoPath);}
 
 function openLightbox(url){
   document.getElementById('lbImg').src=url;
