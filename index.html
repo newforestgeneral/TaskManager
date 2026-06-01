@@ -706,6 +706,7 @@
       <span class="search-icon">⌕</span>
       <input class="search-input" id="searchInput" placeholder="Search tasks…" oninput="doSearch(this.value)" />
     </div>
+    <button id="weatherBtn" onclick="toggleWeatherPanel()" title="Weather forecast" style="background:none;border:none;cursor:pointer;font-size:20px;padding:4px 6px;line-height:1;border-radius:var(--border-radius-md);color:var(--text-secondary)" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='none'">—</button>
     <button id="globalVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
     <button class="btn-secondary" id="filterToggleBtn" onclick="toggleFilterBar()">⊟ Filter</button>
     <button class="btn-primary manager-only" onclick="openModal()">+ New task</button>
@@ -771,6 +772,7 @@
       <button class="btn-secondary delete-btn" style="font-size:12px;padding:4px 10px" onclick="bulkArchive()">Archive</button>
       <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:auto" onclick="clearSelection()">✕ Clear</button>
     </div>
+    <div id="weatherBannerInline"></div>
     <div class="email-list" id="listBody"></div>
   </div>
 
@@ -955,6 +957,26 @@
       <button class="btn-primary" onclick="saveTask()">Save task</button>
     </div>
   </div>
+</div>
+
+<!-- Weather panel -->
+<div id="weatherPanel" style="display:none;position:fixed;top:52px;right:12px;width:340px;max-width:95vw;background:var(--bg-primary);border:0.5px solid var(--border-md);border-radius:var(--border-radius-lg);z-index:350;overflow:hidden" onclick="event.stopPropagation()">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px">
+    <div>
+      <div style="font-size:14px;font-weight:500" id="wpCity">Orangeville, ON</div>
+      <div style="font-size:11px;color:var(--text-tertiary)" id="wpUpdated"></div>
+    </div>
+    <button onclick="closeWeatherPanel()" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text-tertiary);padding:4px">✕</button>
+  </div>
+  <div id="wpDays" style="display:flex;flex-direction:column;gap:0;border-top:0.5px solid var(--border-md)"></div>
+  <div id="wpError" style="display:none;padding:14px;font-size:13px;color:var(--text-tertiary)">Unable to load forecast.</div>
+</div>
+
+<!-- Weather alert banner -->
+<div id="weatherBanner" style="display:none;margin:8px 16px 0;padding:9px 12px;background:#FAEEDA;border:0.5px solid #EF9F27;border-radius:var(--border-radius-md);display:none;align-items:center;gap:10px;font-size:13px;color:#633806">
+  <span style="font-size:16px">⛅</span>
+  <span id="weatherBannerText" style="flex:1"></span>
+  <button onclick="dismissWeatherBanner()" style="background:none;border:none;cursor:pointer;font-size:14px;color:#854F0B;padding:2px 4px;flex-shrink:0">✕</button>
 </div>
 
 <!-- Workspace members modal -->
@@ -1156,6 +1178,7 @@ async function onSignedIn(user){
   hideLoginScreen(); // now safe — correct role is known before UI is revealed
   applyRoleUI();
   await Promise.all([loadWorkspaces(),loadProfiles()]);
+  fetchWeather(); // non-blocking, updates UI when ready
   await loadData();
   setupRealtime();
 }
@@ -1281,6 +1304,7 @@ async function switchWorkspace(ws){
   renderWorkspaceSwitcher();
   viewMode='active';
   filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
+  weatherBannerDismissed=false;
   await loadData();
 }
 
@@ -1288,6 +1312,7 @@ async function switchWorkspace(ws){
 function render(){
   renderList();
   updateBadges();updateAssigneeSelect();updateTopbarTitle();updateWorkerHero();
+  renderWeatherBanner();
 }
 
 function visibleTasks(){
@@ -1348,6 +1373,8 @@ function renderList(){
     const extra=t.assignees.length>1?` +${t.assignees.length-1}`:'';
     const metaParts=[t.lineage?escHtml(t.lineage):'',pm.label+(extra?extra:'')].filter(Boolean).join(' · ');
     const recurBadge=t.recurrenceType?'🔁 ':'';
+    const wxRisk=taskWeatherRisk(t);
+    const wxBadge=wxRisk?`<span title="Weather risk: ${wxRisk.reasons.join(', ')}" style="font-size:13px;cursor:default" onclick="event.stopPropagation();toggleWeatherPanel()">${weatherIcon(wxRisk)}</span>`:'';
     return`<div class="email-item">
       <div class="email-row${sel?' selected':''}${isOpen?' open':''}" onclick="toggleExpand('${t.id}')">
         <div class="er-check" onclick="event.stopPropagation()">
@@ -1358,6 +1385,7 @@ function renderList(){
           <div class="er-title">${escHtml(t.name)}${recurBadge?` <span style="font-size:11px">🔁</span>`:''}</div>
         </div>
         <div class="er-right">
+          ${wxBadge}
           <span class="er-due${od?' overdue':''}">${t.dueDate?fmtDate(t.dueDate):''}</span>
           <span class="er-chevron">›</span>
         </div>
@@ -2540,6 +2568,199 @@ function openMobSidebar(){document.getElementById('sidebar').classList.add('mob-
 function closeMobSidebar(){document.getElementById('sidebar').classList.remove('mob-open');document.getElementById('mobOverlay').classList.remove('open');}
 function toggleMobSidebar(){document.getElementById('sidebar').classList.contains('mob-open')?closeMobSidebar():openMobSidebar();}
 
+
+// ── WEATHER ──
+const WEATHER_KEY='5a0a37b0749146a1d4a7b7db2472c0b7';
+const WEATHER_LAT=43.9196,WEATHER_LON=-80.0940;
+const WEATHER_CACHE_KEY='tt_weather_cache',WEATHER_TS_KEY='tt_weather_ts';
+const WEATHER_TTL=3*60*60*1000; // 3 hours
+const OUTDOOR_ALWAYS=new Set(['Land & Forest','Farm & Garden','Site Infrastructure']);
+const OUTDOOR_CONDITIONAL=new Set(['Building Improvements','Other Building']);
+
+let weatherForecast=null; // array of daily summaries
+let weatherBannerDismissed=false;
+
+async function fetchWeather(){
+  const cached=localStorage.getItem(WEATHER_CACHE_KEY);
+  const ts=parseInt(localStorage.getItem(WEATHER_TS_KEY)||'0');
+  if(cached&&Date.now()-ts<WEATHER_TTL){
+    weatherForecast=JSON.parse(cached);
+    updateWeatherBtn();
+    return;
+  }
+  try{
+    const url=`https://api.openweathermap.org/data/2.5/forecast?lat=${WEATHER_LAT}&lon=${WEATHER_LON}&units=metric&appid=${WEATHER_KEY}`;
+    const res=await fetch(url);
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const json=await res.json();
+    weatherForecast=parseForcast(json);
+    localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify(weatherForecast));
+    localStorage.setItem(WEATHER_TS_KEY,Date.now().toString());
+    updateWeatherBtn();
+  }catch(e){
+    console.warn('Weather fetch failed:',e);
+    weatherForecast=null;
+    updateWeatherBtn();
+  }
+}
+
+function parseForcast(json){
+  // Group 3-hour slots by date, produce one summary per day
+  const days={};
+  (json.list||[]).forEach(slot=>{
+    const date=slot.dt_txt.split(' ')[0];
+    if(!days[date])days[date]={date,slots:[]};
+    days[date].slots.push(slot);
+  });
+  return Object.values(days).slice(0,5).map(d=>{
+    const slots=d.slots;
+    const maxPop=Math.max(...slots.map(s=>s.pop||0));
+    const minTemp=Math.min(...slots.map(s=>s.main?.temp_min??s.main?.temp??99));
+    const maxTemp=Math.max(...slots.map(s=>s.main?.temp_max??s.main?.temp??-99));
+    const hasSnow=slots.some(s=>s.snow&&(s.snow['3h']||0)>0||s.weather?.[0]?.main==='Snow');
+    const hasRain=slots.some(s=>s.rain&&(s.rain['3h']||0)>0||s.weather?.[0]?.main==='Rain'||s.weather?.[0]?.main==='Drizzle'||s.weather?.[0]?.main==='Thunderstorm');
+    // pick the most representative icon (midday slot preferred)
+    const midday=slots.find(s=>s.dt_txt.includes('12:00'))||slots[Math.floor(slots.length/2)];
+    const icon=midday?.weather?.[0]?.icon||'01d';
+    const desc=midday?.weather?.[0]?.description||'';
+    const bad=(maxPop>0.6)||(minTemp<2)||hasSnow;
+    const reasons=[];
+    if(maxPop>0.6)reasons.push(`${Math.round(maxPop*100)}% rain`);
+    if(minTemp<2)reasons.push(`frost (${Math.round(minTemp)}°C)`);
+    if(hasSnow)reasons.push('snow');
+    return{date:d.date,icon,desc,maxPop,minTemp,maxTemp,hasSnow,hasRain,bad,reasons};
+  });
+}
+
+function weatherIcon(day){
+  if(!day)return'—';
+  if(day.hasSnow)return'🌨';
+  if(day.bad&&day.maxPop>0.6)return'🌧';
+  if(day.maxPop>0.3||day.hasRain)return'🌦';
+  if(day.minTemp<2)return'🥶';
+  // use OpenWeather icon code to pick emoji
+  const ic=day.icon||'';
+  if(ic.startsWith('01'))return'☀️';
+  if(ic.startsWith('02'))return'🌤';
+  if(ic.startsWith('03')||ic.startsWith('04'))return'☁️';
+  if(ic.startsWith('09'))return'🌧';
+  if(ic.startsWith('10'))return'🌦';
+  if(ic.startsWith('11'))return'⛈';
+  if(ic.startsWith('13'))return'🌨';
+  if(ic.startsWith('50'))return'🌫';
+  return'🌡';
+}
+
+function fmtWeatherDate(dateStr){
+  const now=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  const localToday=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  const tmrw=new Date(now);tmrw.setDate(tmrw.getDate()+1);
+  const localTomorrow=`${tmrw.getFullYear()}-${pad(tmrw.getMonth()+1)}-${pad(tmrw.getDate())}`;
+  if(dateStr===localToday)return'Today';
+  if(dateStr===localTomorrow)return'Tomorrow';
+  return new Date(dateStr+'T12:00:00').toLocaleDateString('en-CA',{weekday:'short',month:'short',day:'numeric'});
+}
+
+function updateWeatherBtn(){
+  const btn=document.getElementById('weatherBtn');
+  if(!btn)return;
+  if(!weatherForecast){btn.textContent='🌡';return;}
+  const today=weatherForecast[0];
+  btn.textContent=weatherIcon(today);
+}
+
+function toggleWeatherPanel(){
+  const p=document.getElementById('weatherPanel');
+  if(!p)return;
+  const open=p.style.display==='none'||p.style.display==='';
+  p.style.display=open?'block':'none';
+  if(open)renderWeatherPanel();
+}
+function closeWeatherPanel(){
+  const p=document.getElementById('weatherPanel');if(p)p.style.display='none';
+}
+document.addEventListener('click',e=>{
+  const btn=document.getElementById('weatherBtn');
+  const panel=document.getElementById('weatherPanel');
+  if(panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target)){
+    panel.style.display='none';
+  }
+});
+
+function renderWeatherPanel(){
+  const errEl=document.getElementById('wpError');
+  const daysEl=document.getElementById('wpDays');
+  const updEl=document.getElementById('wpUpdated');
+  if(!weatherForecast){
+    if(errEl)errEl.style.display='block';
+    if(daysEl)daysEl.innerHTML='';
+    return;
+  }
+  if(errEl)errEl.style.display='none';
+  const ts=parseInt(localStorage.getItem(WEATHER_TS_KEY)||'0');
+  const mins=Math.round((Date.now()-ts)/60000);
+  if(updEl)updEl.textContent=mins<2?'Just updated':`Updated ${mins}m ago`;
+  daysEl.innerHTML=weatherForecast.map((day,i)=>{
+    const ic=weatherIcon(day);
+    const pop=day.maxPop>0?`${Math.round(day.maxPop*100)}%`:'';
+    const badStyle=day.bad?'border-left:3px solid #EF9F27;':'border-left:3px solid transparent;';
+    const reasonStr=day.reasons.length?`<div style="font-size:11px;color:#854F0B;margin-top:2px">${day.reasons.join(' · ')}</div>`:'';
+    return`<div style="${badStyle}display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:0.5px solid var(--border-md)">
+      <div style="font-size:22px;width:32px;text-align:center">${ic}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:${i===0?'500':'400'}">${fmtWeatherDate(day.date)}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);text-transform:capitalize">${day.desc}</div>
+        ${reasonStr}
+      </div>
+      <div style="text-align:right;font-size:12px">
+        <div style="font-weight:500">${Math.round(day.maxTemp)}° <span style="color:var(--text-tertiary);font-weight:400">${Math.round(day.minTemp)}°</span></div>
+        ${pop?`<div style="color:#378ADD">${pop} rain</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Returns the forecast day summary for a given date string (YYYY-MM-DD), or null
+function getForecastForDate(dateStr){
+  if(!weatherForecast||!dateStr)return null;
+  return weatherForecast.find(d=>d.date===dateStr)||null;
+}
+
+// Is a task weather-at-risk on its start or due date?
+function taskWeatherRisk(t){
+  if(!weatherForecast)return null;
+  const OUTDOOR_ALWAYS=new Set(['Land & Forest','Farm & Garden','Site Infrastructure']);
+  const OUTDOOR_CONDITIONAL=new Set(['Building Improvements','Other Building']);
+  const isOutdoor=OUTDOOR_ALWAYS.has(t.lineage)||(OUTDOOR_CONDITIONAL.has(t.lineage)&&t.weatherDependent==='yes');
+  if(!isOutdoor)return null;
+  const checkDates=[t.startDate,t.dueDate].filter(Boolean);
+  for(const d of checkDates){
+    const fc=getForecastForDate(d);
+    if(fc&&fc.bad)return fc;
+  }
+  return null;
+}
+
+function renderWeatherBanner(){
+  const el=document.getElementById('weatherBannerInline');
+  if(!el)return;
+  if(weatherBannerDismissed||!weatherForecast){el.innerHTML='';return;}
+  const atRisk=filteredTasks().filter(t=>taskWeatherRisk(t));
+  if(!atRisk.length){el.innerHTML='';return;}
+  const lineages=[...new Set(atRisk.map(t=>t.lineage).filter(Boolean))];
+  const msg=`${atRisk.length} task${atRisk.length>1?'s':''} may be affected by weather this week${lineages.length?` (${lineages.join(', ')})`:''}.`;
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin:8px 0 4px;padding:9px 12px;background:#FAEEDA;border:0.5px solid #EF9F27;border-radius:var(--border-radius-md);font-size:13px;color:#633806">
+    <span style="font-size:15px">⛅</span>
+    <span style="flex:1">${msg}</span>
+    <button onclick="dismissWeatherBanner()" style="background:none;border:none;cursor:pointer;font-size:14px;color:#854F0B;padding:2px 4px">✕</button>
+  </div>`;
+}
+function dismissWeatherBanner(){
+  weatherBannerDismissed=true;
+  const el=document.getElementById('weatherBannerInline');
+  if(el)el.innerHTML='';
+}
 
 // ── PHOTOS ──
 async function loadPhotos(taskId){
