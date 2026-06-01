@@ -158,7 +158,7 @@
     .bulk-sep{width:0.5px;height:16px;background:var(--border-md);margin:0 2px}
 
     /* EMAIL ROW */
-    .email-row{display:flex;align-items:center;gap:8px;padding:7px 12px;
+    .email-row{display:flex;align-items:center;gap:8px;padding:4px 12px;
       border-bottom:0.5px solid var(--border);cursor:pointer;transition:background 0.1s;
       user-select:none}
     .email-row:last-child{border-bottom:none}
@@ -167,7 +167,7 @@
     @media(prefers-color-scheme:dark){.email-row.selected{background:#18173a}}
     .er-check{flex-shrink:0;width:32px;display:flex;align-items:center;justify-content:center}
     .er-check label{display:flex;align-items:center;justify-content:center;
-      min-width:28px;min-height:32px;cursor:pointer}
+      min-width:28px;min-height:24px;cursor:pointer}
     .er-check input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
     .er-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
       justify-content:center;font-size:10px;font-weight:600;flex-shrink:0}
@@ -466,9 +466,17 @@
     .delete-btn{color:#A32D2D!important}
     .delete-btn:hover{background:#FCEBEB!important}
 
+    /* LOADING OVERLAY */
+    .app-loading{position:fixed;inset:0;background:var(--bg-secondary);z-index:600;
+      display:flex;align-items:center;justify-content:center}
+    .app-loading-logo{width:44px;height:44px;background:var(--accent);border-radius:10px;
+      display:flex;align-items:center;justify-content:center;color:white;
+      font-size:20px;font-weight:700;opacity:0;animation:fade-logo 0.3s 0.1s forwards}
+    @keyframes fade-logo{to{opacity:1}}
+
     /* LOGIN */
     .login-screen{position:fixed;inset:0;background:var(--bg-secondary);z-index:500;
-      display:flex;align-items:center;justify-content:center;padding:16px}
+      display:none;align-items:center;justify-content:center;padding:16px}
     .login-card{background:var(--bg-primary);border:0.5px solid var(--border);
       border-radius:var(--radius-lg);padding:36px 32px;width:100%;max-width:360px;
       box-shadow:var(--shadow-md);text-align:center;
@@ -505,10 +513,31 @@
       padding:0;line-height:1;transition:color 0.12s}
     .login-pw-toggle:hover{color:var(--text-secondary)}
     .login-divider{border:none;border-top:0.5px solid var(--border);margin:20px 0 0}
+
+    /* WORKER MODE */
+    body.worker-mode .sidebar{display:none}
+    body.worker-mode #filterBar{display:none!important}
+    body.worker-mode #filterToggleBtn{display:none}
+    body.worker-mode .er-check{display:none}
+    body.worker-mode #bulkBar{display:none!important}
+    body.worker-mode .mobile-header .mobile-menu-btn{display:none}
+
+.worker-hero{display:none;background:var(--bg-primary);padding:10px 20px;
+      border-bottom:0.5px solid var(--border);flex-shrink:0}
+    body.worker-mode .worker-hero{display:block}
+    .worker-hero-label{font-size:10px;font-weight:600;letter-spacing:0.6px;
+      text-transform:uppercase;color:var(--text-tertiary);margin-bottom:2px}
+    .worker-hero-row{display:flex;align-items:baseline;gap:6px}
+    .worker-hero-count{font-size:26px;font-weight:800;color:var(--text-primary);line-height:1}
+    .worker-hero-sub{font-size:13px;color:var(--text-secondary)}
   </style>
 </head>
 <body>
 
+
+<div class="app-loading" id="appLoading">
+  <div class="app-loading-logo">T</div>
+</div>
 
 <div class="login-screen" id="loginScreen">
   <div class="login-card">
@@ -575,6 +604,24 @@
     <button class="sidebar-close-btn" onclick="closeMobSidebar()" title="Close menu">☰</button>
     <div class="logo-icon">T</div>Task Tracker
   </div>
+  <!-- Workspace switcher -->
+  <div id="wsSwitcher" style="margin:0 8px 4px;position:relative">
+    <div id="wsCurrentBtn" onclick="toggleWorkspacePicker()" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--border-radius-md);cursor:pointer;border:0.5px solid var(--border-md);background:var(--bg-secondary)">
+      <span id="wsDot" style="width:9px;height:9px;border-radius:50%;background:#1D9E75;flex-shrink:0"></span>
+      <span id="wsName" style="font-size:13px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Loading…</span>
+      <span style="font-size:11px;opacity:.5">▾</span>
+    </div>
+    <!-- Picker dropdown -->
+    <div id="wsPicker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-primary);border:0.5px solid var(--border-md);border-radius:var(--border-radius-md);z-index:200;overflow:hidden">
+      <div style="padding:6px 10px 4px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em">Workspaces</div>
+      <div id="wsPickerList"></div>
+      <div class="manager-only" style="border-top:0.5px solid var(--border-md)">
+        <div onclick="promptNewWorkspace()" style="display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:13px;color:var(--text-secondary);cursor:pointer" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+          <span style="font-size:16px">＋</span> New workspace
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="sidebar-scroll">
     <div class="sidebar-section">
       <div class="sidebar-section-label">Stage</div>
@@ -594,7 +641,7 @@
     <div class="sidebar-section manager-only">
       <div class="sidebar-section-label">Admin</div>
       <div class="nav-item" id="snArchived" onclick="switchViewMode('archived')">
-        <span class="nav-icon" style="color:var(--text-tertiary)">▣</span> Archived
+        <span class="nav-icon" style="color:var(--text-tertiary)">▣</span> Archived <span class="nav-badge" id="nb-archived">0</span>
       </div>
     </div>
     <div class="sidebar-section">
@@ -660,10 +707,19 @@
       <input class="search-input" id="searchInput" placeholder="Search tasks…" oninput="doSearch(this.value)" />
     </div>
     <button id="globalVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
-    <button class="btn-secondary" onclick="toggleFilterBar()">⊟ Filter</button>
+    <button class="btn-secondary" id="filterToggleBtn" onclick="toggleFilterBar()">⊟ Filter</button>
     <button class="btn-primary manager-only" onclick="openModal()">+ New task</button>
     <div class="topbar-user" id="topbarUserWrap">
       <button class="topbar-avatar" id="topbarAvatar" onclick="toggleUserMenu(event)">?</button>
+    </div>
+  </div>
+
+  <!-- WORKER HERO -->
+  <div class="worker-hero" id="workerHero">
+    <div class="worker-hero-label">Today</div>
+    <div class="worker-hero-row">
+      <span class="worker-hero-count" id="workerHeroCount">0</span>
+      <span class="worker-hero-sub">tasks assigned to you</span>
     </div>
   </div>
 
@@ -901,6 +957,28 @@
   </div>
 </div>
 
+<!-- Workspace members modal -->
+<div id="wsMembersModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.38);z-index:400;align-items:center;justify-content:center" onclick="if(event.target===this)closeWsMembersModal()">
+  <div style="background:var(--bg-primary);border-radius:var(--border-radius-lg);border:0.5px solid var(--border-md);width:420px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:0.5px solid var(--border-md)">
+      <div style="font-size:15px;font-weight:500" id="wsMembersTitle">Manage members</div>
+      <button onclick="closeWsMembersModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-secondary)">✕</button>
+    </div>
+    <div style="padding:14px 16px;overflow-y:auto;flex:1">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Members can see and work on tasks in this workspace.</div>
+      <div id="wsMembersList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px"></div>
+      <div style="font-size:12px;font-weight:500;margin-bottom:6px;color:var(--text-secondary)">Add member</div>
+      <div style="display:flex;gap:8px">
+        <select id="wsAddMemberSelect" style="flex:1;font-size:13px;padding:7px 10px;border:0.5px solid var(--border-md);border-radius:var(--border-radius-md);background:var(--bg-primary);color:var(--text-primary)">
+          <option value="">Select person…</option>
+        </select>
+        <button onclick="addWsMember()" class="btn-primary" style="font-size:13px;padding:7px 14px">Add</button>
+      </div>
+      <div id="wsAddMsg" style="font-size:12px;margin-top:6px;color:var(--text-tertiary)"></div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL='https://tymspwfnykujydgzzzhd.supabase.co';
@@ -908,7 +986,7 @@ const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 // Hard-coded redirect for password reset — never trust window.location.href.
 // Update this to your production domain before deploying to Vercel.
-const APP_ORIGIN='https://newforest-tasks.vercel.app';
+const APP_ORIGIN='http://localhost:5173';
 
 const STAGE={
   created:   {label:'Created',    color:'#534AB7',badge:'badge-purple'},
@@ -939,7 +1017,10 @@ const AV_COLS=[
 let tasks=[],openId=null,editId=null,currentView='list';
 let filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
 let currentUser=null,currentRole='worker',currentProfile=null,allProfiles=[];
+let workspaces=[],currentWorkspace=null;
 let viewMode='active'; // 'active' | 'archived'
+let activeTasks=[]; // snapshot of active tasks for sidebar badge counts
+let archivedCount=0;
 const selectedIds=new Set();
 
 const LINEAGES=['Land & Forest','Farm & Garden','Building Improvements','Other Building','Site Infrastructure','Housekeeping','Kitchen','Dining','Administration'];
@@ -1011,7 +1092,12 @@ function showForgotPane(){
   if(emailVal)document.getElementById('resetEmail').value=emailVal;
   setLoginMsg('');
 }
+function removeLoadingOverlay(){
+  const el=document.getElementById('appLoading');
+  if(el)el.remove();
+}
 function showLoginScreen(){
+  removeLoadingOverlay();
   document.getElementById('loginScreen').style.display='flex';
   showSignInPane();
   document.getElementById('loginEmail').value='';
@@ -1019,7 +1105,10 @@ function showLoginScreen(){
   const pwi=document.getElementById('loginPassword');
   if(pwi.type==='text'){pwi.type='password';document.getElementById('pwToggle').textContent='👁';}
 }
-function hideLoginScreen(){document.getElementById('loginScreen').style.display='none';}
+function hideLoginScreen(){
+  document.getElementById('loginScreen').style.display='none';
+  removeLoadingOverlay();
+}
 
 function togglePwVis(){
   const inp=document.getElementById('loginPassword');
@@ -1053,10 +1142,7 @@ async function sendPasswordReset(){
 async function onSignedIn(user){
   if(currentUser?.id===user.id)return; // prevent double-call
   currentUser=user;
-  // Hide login immediately — don't wait for profile fetch
-  hideLoginScreen();
-  applyRoleUI(); // shows email as fallback name while profile loads
-  // Load profile
+  // Load profile first so applyRoleUI() has the correct role before showing the app
   let{data:profile,error:pErr}=await sb.from('profiles').select('*').eq('id',user.id).single();
   if(pErr&&pErr.code!=='PGRST116')console.error('Profile fetch:',pErr);
   if(!profile){
@@ -1067,14 +1153,17 @@ async function onSignedIn(user){
   }
   currentProfile=profile;
   currentRole=profile.role||'worker';
-  applyRoleUI(); // update with real name + role
-  await Promise.all([loadData(),loadProfiles()]);
+  hideLoginScreen(); // now safe — correct role is known before UI is revealed
+  applyRoleUI();
+  await Promise.all([loadWorkspaces(),loadProfiles()]);
+  await loadData();
   setupRealtime();
 }
 
 function applyRoleUI(){
   const isManager=currentRole==='manager';
   document.querySelectorAll('.manager-only').forEach(el=>el.style.display=isManager?'':'none');
+  document.body.classList.toggle('worker-mode',!isManager);
   const name=currentProfile?.name||currentUser?.email||'User';
   const av=document.getElementById('sidebarAvatar');
   const un=document.getElementById('sidebarUserName');
@@ -1095,7 +1184,7 @@ function applyRoleUI(){
 async function signOut(){
   releaseMicStream();
   await sb.auth.signOut();
-  currentUser=null;currentProfile=null;currentRole='worker';tasks=[];
+  currentUser=null;currentProfile=null;currentRole='worker';tasks=[];workspaces=[];currentWorkspace=null;
   showLoginScreen();
 }
 
@@ -1106,19 +1195,31 @@ async function initAuth(){
   sb.auth.onAuthStateChange(async(event,session)=>{
     if(event==='SIGNED_IN'&&session){await onSignedIn(session.user);}
     else if(event==='PASSWORD_RECOVERY'){hideLoginScreen();setTimeout(openPwdModal,400);}
-    else if(event==='SIGNED_OUT'){currentUser=null;currentProfile=null;currentRole='worker';tasks=[];showLoginScreen();}
+    else if(event==='SIGNED_OUT'){currentUser=null;currentProfile=null;currentRole='worker';tasks=[];workspaces=[];currentWorkspace=null;showLoginScreen();}
   });
 }
 
 // ── DATA ──
 async function loadData(){
+  if(!currentWorkspace){tasks=[];activeTasks=[];archivedCount=0;render();return;}
+  const wsId=currentWorkspace.id;
   const isArchived=viewMode==='archived';
   const{data,error}=await sb.from('tasks').select('*, task_updates(*)')
-    .eq('archived',isArchived).order('created_at',{ascending:true});
+    .eq('workspace_id',wsId).eq('archived',isArchived).order('created_at',{ascending:true});
   if(error){console.error('loadData:',error);return;}
   tasks=(data||[]).map(fromDb);
+  if(isArchived){
+    const{data:ad}=await sb.from('tasks').select('id,stage,priority,lineage,assignees')
+      .eq('workspace_id',wsId).eq('archived',false);
+    if(ad)activeTasks=ad.map(fromDb);
+    archivedCount=tasks.length;
+  } else {
+    activeTasks=tasks;
+    const{count:ac}=await sb.from('tasks').select('*',{count:'exact',head:true})
+      .eq('workspace_id',wsId).eq('archived',true);
+    archivedCount=ac||0;
+  }
   if(!isArchived){
-    // Fix any tasks with assignees still stuck in 'created'
     const stale=tasks.filter(t=>t.stage==='created'&&t.assignees.length>0);
     for(const t of stale){
       await sb.from('tasks').update({stage:'assigned'}).eq('id',t.id);
@@ -1126,13 +1227,13 @@ async function loadData(){
     }
     if(stale.length>0){
       const{data:d0}=await sb.from('tasks').select('*, task_updates(*)')
-        .eq('archived',false).order('created_at',{ascending:true});
+        .eq('workspace_id',wsId).eq('archived',false).order('created_at',{ascending:true});
       if(d0)tasks=d0.map(fromDb);
     }
     const spawned=await checkRecurring();
     if(spawned>0){
       const{data:d2}=await sb.from('tasks').select('*, task_updates(*)')
-        .eq('archived',false).order('created_at',{ascending:true});
+        .eq('workspace_id',wsId).eq('archived',false).order('created_at',{ascending:true});
       if(d2)tasks=d2.map(fromDb);
     }
   }
@@ -1150,10 +1251,43 @@ async function loadProfiles(){
   allProfiles=[...profiles,...contractors].sort((a,b)=>a.name.localeCompare(b.name));
 }
 
+async function loadWorkspaces(){
+  const{data,error}=await sb.from('workspace_members')
+    .select('role, workspaces(id,name,color,created_by)')
+    .eq('profile_id',currentUser.id);
+  if(error){console.error('loadWorkspaces:',error);workspaces=[];return;}
+  workspaces=(data||[]).map(r=>({...r.workspaces,memberRole:r.role}));
+  // restore last workspace or pick first
+  const saved=localStorage.getItem('tt_workspace');
+  currentWorkspace=workspaces.find(w=>w.id===saved)||workspaces[0]||null;
+  renderWorkspaceSwitcher();
+}
+
+async function createWorkspace(name,color='#1D9E75'){
+  const{data:ws,error}=await sb.from('workspaces').insert({name,color,created_by:currentUser.id}).select().single();
+  if(error){console.error('createWorkspace:',error);return null;}
+  await sb.from('workspace_members').insert({workspace_id:ws.id,profile_id:currentUser.id,role:'admin'});
+  return ws;
+}
+
+async function switchWorkspaceById(id){
+  const ws=workspaces.find(w=>w.id===id);
+  if(ws)await switchWorkspace(ws);
+}
+async function switchWorkspace(ws){
+  currentWorkspace=ws;
+  localStorage.setItem('tt_workspace',ws.id);
+  closeWorkspacePicker();
+  renderWorkspaceSwitcher();
+  viewMode='active';
+  filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
+  await loadData();
+}
+
 // ── RENDER ──
 function render(){
   renderList();
-  updateBadges();updateAssigneeSelect();updateTopbarTitle();
+  updateBadges();updateAssigneeSelect();updateTopbarTitle();updateWorkerHero();
 }
 
 function visibleTasks(){
@@ -1163,6 +1297,17 @@ function visibleTasks(){
   }
   return tasks;
 }
+function updateWorkerHero(){
+  const el=document.getElementById('workerHeroCount');
+  if(!el)return;
+  if(currentRole!=='worker'||!currentProfile?.name){el.textContent='0';return;}
+  const n=currentProfile.name.toLowerCase();
+  const count=tasks.filter(t=>t.assignees.some(a=>a.toLowerCase()===n)&&t.stage!=='complete').length;
+  el.textContent=count;
+  const sub=document.querySelector('.worker-hero-sub');
+  if(sub)sub.textContent=count===1?'task assigned to you':'tasks assigned to you';
+}
+
 function filteredTasks(){
   return visibleTasks().filter(t=>{
     if(filter.stage!=='all'&&t.stage!==filter.stage)return false;
@@ -1182,6 +1327,10 @@ function filteredTasks(){
 function renderList(){
   const el=document.getElementById('listBody');
   const ft=filteredTasks();
+  if(!currentWorkspace){
+    el.innerHTML=`<div class="email-list-empty">${currentRole==='manager'?'No workspace selected — create one using the switcher above.':'You haven\'t been added to any workspace yet.'}</div>`;
+    updateBulkBar();return;
+  }
   if(!ft.length){el.innerHTML='<div class="email-list-empty">No tasks found</div>';updateBulkBar();return;}
   const SECTION_ORDER=['created','assigned','inprogress','review','complete'];
   const SECTION_LABELS={created:'To be Assigned',assigned:'Assigned',inprogress:'In Progress',review:'In Review',complete:'Complete'};
@@ -1207,7 +1356,6 @@ function renderList(){
         <div class="er-avatar" style="background:${avC.bg};color:${avC.fg}">${avLabel}</div>
         <div class="er-body">
           <div class="er-title">${escHtml(t.name)}${recurBadge?` <span style="font-size:11px">🔁</span>`:''}</div>
-          <div class="er-meta">${metaParts}</div>
         </div>
         <div class="er-right">
           <span class="er-due${od?' overdue':''}">${t.dueDate?fmtDate(t.dueDate):''}</span>
@@ -1295,13 +1443,11 @@ function taskExpandHtml(t){
 
   const stageRow=`<span class="badge ${sm.badge}">${sm.label}</span>`;
 
-  const pctRow=isManager
-    ?`<input type="range" class="progress-range" min="0" max="100" step="1"
-        value="${t.percentComplete||0}"
-        oninput="document.getElementById('pct-lbl').textContent=Math.round(this.value)+'%'"
-        onchange="savePercent('${id}',this.value)" style="flex:1" />
-       <span id="pct-lbl" class="pct-label">${t.percentComplete||0}%</span>`
-    :`<span style="font-size:13px;font-weight:500">${t.percentComplete||0}%</span>`;
+  const pctRow=`<input type="range" class="progress-range" min="0" max="100" step="1"
+      value="${t.percentComplete||0}"
+      oninput="document.getElementById('pct-lbl').textContent=Math.round(this.value)+'%'"
+      onchange="savePercent('${id}',this.value)" style="flex:1" />
+     <span id="pct-lbl" class="pct-label">${t.percentComplete||0}%</span>`;
 
   const avRow=t.assignees.map(a=>{const c=avColor(a);
     return`<div class="avatar" style="background:${c.bg};color:${c.fg};border:none">${initials(a)}</div><span>${escHtml(a)}</span>`;
@@ -1355,11 +1501,11 @@ function taskExpandHtml(t){
         <div class="expand-sub">${[t.creatorName,t.lineage,t.project].filter(Boolean).map(escHtml).join(' · ')}</div>
       </div>
       <div class="expand-actions">
+        <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update">🎤</button>
         ${isManager&&viewMode==='active'?`<button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="openModal(true)">Edit</button>`:''}
         ${isManager&&viewMode==='active'?`<button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="archiveTask()">Archive</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-primary" style="font-size:12px;padding:5px 10px" onclick="restoreTask()">Restore</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="deleteTaskPermanently()">Delete forever</button>`:''}
-        <button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="closeDetail()">✕</button>
       </div>
     </div>
     ${t.description?`<div class="panel-section"><div class="sec-label" style="margin-bottom:4px">Description</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.6">${escHtml(t.description)}</div></div>`:''}
@@ -1397,7 +1543,6 @@ function taskExpandHtml(t){
       ${showMoreBtn}
     </div>
     <div class="panel-actions">
-      <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update" style="align-self:flex-end;flex-shrink:0">🎤</button>
       <div style="flex:1">
         <textarea class="update-textarea" id="updateInput" style="height:42px"
           placeholder="Add a progress update… (Enter to post)"
@@ -1841,7 +1986,7 @@ async function confirmVoiceEdits(){
       tools:edits.tools||[],
       taskNotes:edits.taskNotes||''
     };
-    const{data:inserted,error}=await sb.from('tasks').insert(toDb(newTask)).select().single();
+    const{data:inserted,error}=await sb.from('tasks').insert({...toDb(newTask),workspace_id:currentWorkspace?.id||null}).select().single();
     if(error){console.error('voice insert:',error);return;}
     if(inserted)await logUpdate(inserted.id,'Task created via voice','Voice');
     clearVoicePreview();
@@ -2171,6 +2316,7 @@ async function spawnNextRecurrence(t,nextStart){
     stage:'assigned',percent_complete:0,
     start_date:nextStart,due_date:nextDue,
     recurrence_parent_id:t.id,archived:false,
+    workspace_id:currentWorkspace?.id||null,
   };
   const{data:ins,error}=await sb.from('tasks').insert(newTask).select().single();
   if(error){console.error('spawnNextRecurrence:',error);return;}
@@ -2267,7 +2413,8 @@ async function saveTask(){
       :'Task updated (no field changes detected)';
     await logUpdate(editId,summary);
   } else {
-    const{data:inserted,error}=await sb.from('tasks').insert(toDb(data)).select().single();
+    const insertPayload={...toDb(data),workspace_id:currentWorkspace?.id||null};
+    const{data:inserted,error}=await sb.from('tasks').insert(insertPayload).select().single();
     if(error){console.error('saveTask insert:',error);return;}
     if(inserted)await logUpdate(inserted.id,'Task created');
   }
@@ -2339,24 +2486,29 @@ function updateBadges(){
   const cnt={created:0,assigned:0,inprogress:0,review:0,complete:0};
   const priCnt={urgent:0,high:0,medium:0,low:0};
   const linCnt={};
-  const vt=visibleTasks();
-  vt.forEach(t=>{
+  // Always count from active tasks so sidebar badges stay meaningful in archived mode
+  const bt=currentRole==='worker'&&currentProfile?.name
+    ?activeTasks.filter(t=>t.assignees.some(a=>a.toLowerCase()===currentProfile.name.toLowerCase()))
+    :activeTasks;
+  bt.forEach(t=>{
     if(cnt[t.stage]!==undefined)cnt[t.stage]++;
     if(priCnt[t.priority]!==undefined)priCnt[t.priority]++;
     if(t.lineage)linCnt[t.lineage]=(linCnt[t.lineage]||0)+1;
   });
-  document.getElementById('nb-all').textContent=vt.length;
+  document.getElementById('nb-all').textContent=bt.length;
   document.getElementById('nb-created').textContent=cnt.created;
   document.getElementById('nb-assigned').textContent=cnt.assigned;
   document.getElementById('nb-inprogress').textContent=cnt.inprogress;
   document.getElementById('nb-review').textContent=cnt.review;
   document.getElementById('nb-complete').textContent=cnt.complete;
-  document.getElementById('nb-p-all').textContent=vt.length;
+  document.getElementById('nb-p-all').textContent=bt.length;
+  const archivedEl=document.getElementById('nb-archived');
+  if(archivedEl)archivedEl.textContent=archivedCount;
   document.getElementById('nb-p-urgent').textContent=priCnt.urgent;
   document.getElementById('nb-p-high').textContent=priCnt.high;
   document.getElementById('nb-p-medium').textContent=priCnt.medium;
   document.getElementById('nb-p-low').textContent=priCnt.low;
-  document.getElementById('nb-l-all').textContent=vt.length;
+  document.getElementById('nb-l-all').textContent=bt.length;
   const linMap={'Land & Forest':'nb-l-Land','Farm & Garden':'nb-l-Farm','Building Improvements':'nb-l-BldImpr',
     'Other Building':'nb-l-OtherBld','Site Infrastructure':'nb-l-SiteInfra','Housekeeping':'nb-l-House',
     'Kitchen':'nb-l-Kitchen','Dining':'nb-l-Dining','Administration':'nb-l-Admin'};
@@ -2480,6 +2632,120 @@ function setupRealtime(){
       await loadData();if(openId)openDetail(openId);
     })
     .subscribe();
+}
+
+// ── WORKSPACE UI ──
+function renderWorkspaceSwitcher(){
+  const nameEl=document.getElementById('wsName');
+  const dotEl=document.getElementById('wsDot');
+  if(!nameEl)return;
+  if(!currentWorkspace){
+    nameEl.textContent=currentRole==='manager'?'No workspace':'No access';
+    if(dotEl)dotEl.style.background='#888';
+    return;
+  }
+  nameEl.textContent=currentWorkspace.name;
+  if(dotEl)dotEl.style.background=currentWorkspace.color||'#1D9E75';
+}
+
+function renderWorkspacePickerList(){
+  const list=document.getElementById('wsPickerList');
+  if(!list)return;
+  list.innerHTML=workspaces.map(ws=>`
+    <div onclick="switchWorkspaceById('${ws.id}')"
+      style="display:flex;align-items:center;gap:10px;padding:8px 10px;font-size:13px;cursor:pointer;${currentWorkspace?.id===ws.id?'background:var(--bg-secondary)':''}"
+      onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='${currentWorkspace?.id===ws.id?'var(--bg-secondary)':''}'"
+    >
+      <span style="width:9px;height:9px;border-radius:50%;background:${ws.color||'#1D9E75'};flex-shrink:0;display:inline-block"></span>
+      <span style="flex:1">${escHtml(ws.name)}</span>
+      ${currentWorkspace?.id===ws.id?'<span style="font-size:12px;color:var(--text-tertiary)">✓</span>':''}
+      ${ws.memberRole==='admin'?`<span onclick="event.stopPropagation();openWsMembersModal('${ws.id}')" title="Manage members" style="font-size:12px;color:var(--text-tertiary);padding:2px 4px;border-radius:4px" onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-tertiary)'">⚙</span>`:''}
+    </div>`).join('')||'<div style="padding:8px 10px;font-size:13px;color:var(--text-tertiary)">No workspaces</div>';
+}
+
+function toggleWorkspacePicker(){
+  const picker=document.getElementById('wsPicker');
+  if(!picker)return;
+  const open=picker.style.display==='none';
+  picker.style.display=open?'block':'none';
+  if(open)renderWorkspacePickerList();
+}
+function closeWorkspacePicker(){
+  const p=document.getElementById('wsPicker');if(p)p.style.display='none';
+}
+document.addEventListener('click',e=>{
+  const sw=document.getElementById('wsSwitcher');
+  if(sw&&!sw.contains(e.target))closeWorkspacePicker();
+});
+
+async function promptNewWorkspace(){
+  closeWorkspacePicker();
+  const name=prompt('Workspace name:');
+  if(!name||!name.trim())return;
+  const colors=['#1D9E75','#378ADD','#EF9F27','#E24B4A','#534AB7','#D85A30'];
+  const color=colors[workspaces.length%colors.length];
+  const ws=await createWorkspace(name.trim(),color);
+  if(!ws)return;
+  await loadWorkspaces();
+  const newWs=workspaces.find(w=>w.id===ws.id)||workspaces[0];
+  if(newWs)await switchWorkspace(newWs);
+}
+
+// Workspace members modal
+let wsMembersWorkspaceId=null;
+let wsMembersList=[];
+
+async function openWsMembersModal(wsId){
+  closeWorkspacePicker();
+  wsMembersWorkspaceId=wsId;
+  const ws=workspaces.find(w=>w.id===wsId);
+  const titleEl=document.getElementById('wsMembersTitle');
+  if(titleEl)titleEl.textContent=`Members — ${ws?.name||''}`;
+  document.getElementById('wsMembersModal').style.display='flex';
+  document.getElementById('wsAddMsg').textContent='';
+  await refreshWsMembersModal();
+}
+
+async function refreshWsMembersModal(){
+  const{data,error}=await sb.from('workspace_members')
+    .select('profile_id, role, profiles(id,name,role)')
+    .eq('workspace_id',wsMembersWorkspaceId);
+  if(error){console.error(error);return;}
+  wsMembersList=data||[];
+  const list=document.getElementById('wsMembersList');
+  list.innerHTML=wsMembersList.map(m=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border:0.5px solid var(--border-md);border-radius:var(--border-radius-md);font-size:13px">
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;flex-shrink:0">${initials(m.profiles?.name||'?')}</div>
+      <span style="flex:1">${escHtml(m.profiles?.name||m.profile_id)}</span>
+      <span style="font-size:11px;color:var(--text-tertiary)">${m.role}</span>
+      ${m.profile_id!==currentUser.id?`<button onclick="removeWsMember('${m.profile_id}')" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:14px;padding:2px 4px" title="Remove">✕</button>`:''}
+    </div>`).join('')||'<div style="font-size:13px;color:var(--text-tertiary)">No members yet.</div>';
+  // Populate add dropdown — only profiles not already members
+  const memberIds=new Set(wsMembersList.map(m=>m.profile_id));
+  const eligible=allProfiles.filter(p=>!p.isContractor&&!memberIds.has(p.id));
+  const sel=document.getElementById('wsAddMemberSelect');
+  sel.innerHTML='<option value="">Select person…</option>'+
+    eligible.map(p=>`<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+}
+
+async function addWsMember(){
+  const sel=document.getElementById('wsAddMemberSelect');
+  const profileId=sel.value;
+  if(!profileId){document.getElementById('wsAddMsg').textContent='Select a person first.';return;}
+  const{error}=await sb.from('workspace_members').insert({workspace_id:wsMembersWorkspaceId,profile_id:profileId,role:'member'});
+  if(error){document.getElementById('wsAddMsg').textContent=error.message;return;}
+  document.getElementById('wsAddMsg').textContent='';
+  await refreshWsMembersModal();
+}
+
+async function removeWsMember(profileId){
+  if(!confirm('Remove this person from the workspace?'))return;
+  await sb.from('workspace_members').delete().eq('workspace_id',wsMembersWorkspaceId).eq('profile_id',profileId);
+  await refreshWsMembersModal();
+}
+
+function closeWsMembersModal(){
+  document.getElementById('wsMembersModal').style.display='none';
 }
 
 // ── CONTRACTOR MODAL ──
