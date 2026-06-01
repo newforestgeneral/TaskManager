@@ -1266,7 +1266,7 @@ async function loadWorkspaces(){
 async function createWorkspace(name,color='#1D9E75'){
   const{data:ws,error}=await sb.from('workspaces').insert({name,color,created_by:currentUser.id}).select().single();
   if(error){console.error('createWorkspace:',error);return null;}
-  await sb.from('workspace_members').insert({workspace_id:ws.id,profile_id:currentUser.id,role:'admin'});
+  // workspace_members row is created automatically by the add_workspace_creator() trigger
   return ws;
 }
 
