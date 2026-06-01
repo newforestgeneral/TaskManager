@@ -1255,7 +1255,7 @@ async function loadWorkspaces(){
   const{data,error}=await sb.from('workspace_members')
     .select('role, workspaces(id,name,color,created_by)')
     .eq('profile_id',currentUser.id);
-  if(error){console.error('loadWorkspaces:',error);workspaces=[];return;}
+  if(error){console.error('loadWorkspaces:',error);workspaces=[];renderWorkspaceSwitcher();return;}
   workspaces=(data||[]).map(r=>({...r.workspaces,memberRole:r.role}));
   // restore last workspace or pick first
   const saved=localStorage.getItem('tt_workspace');
