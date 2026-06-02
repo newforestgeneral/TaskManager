@@ -697,6 +697,10 @@
     <button class="mobile-menu-btn" id="mobMenuBtn" onclick="toggleMobSidebar()">☰</button>
     <div style="font-size:15px;font-weight:600;flex:1">Task Tracker</div>
     <button id="mobVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
+    <div style="display:flex;gap:2px;background:var(--bg-tertiary);border-radius:var(--radius-sm);padding:2px">
+      <button id="mobViewBtnList" onclick="switchView('list')" title="List view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:var(--bg-primary);color:var(--text-primary)">☰</button>
+      <button id="mobViewBtnCal" onclick="switchView('calendar')" title="Calendar view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:transparent;color:var(--text-secondary)">▦</button>
+    </div>
     <button class="btn-primary manager-only" style="padding:6px 12px;font-size:12px" onclick="openModal()">+ Task</button>
     <div class="topbar-user" style="position:relative">
       <button class="topbar-avatar" id="mobAvatar" onclick="toggleUserMenu(event)">?</button>
@@ -2900,6 +2904,8 @@ function switchView(v){
   const calEl=document.getElementById('calendarView');
   const btnList=document.getElementById('viewBtnList');
   const btnCal=document.getElementById('viewBtnCal');
+  const mobBtnList=document.getElementById('mobViewBtnList');
+  const mobBtnCal=document.getElementById('mobViewBtnCal');
   const filterBtn=document.getElementById('filterToggleBtn');
   if(v==='calendar'){
     if(listEl)listEl.style.display='none';
@@ -2907,6 +2913,8 @@ function switchView(v){
     if(calEl)calEl.style.flexDirection='column';
     if(btnList){btnList.style.background='transparent';btnList.style.color='var(--text-secondary)';}
     if(btnCal){btnCal.style.background='var(--bg-primary)';btnCal.style.color='var(--text-primary)';}
+    if(mobBtnList){mobBtnList.style.background='transparent';mobBtnList.style.color='var(--text-secondary)';}
+    if(mobBtnCal){mobBtnCal.style.background='var(--bg-primary)';mobBtnCal.style.color='var(--text-primary)';}
     if(filterBtn)filterBtn.style.display='none';
     renderCalendar();
   } else {
@@ -2914,6 +2922,8 @@ function switchView(v){
     if(calEl)calEl.style.display='none';
     if(btnList){btnList.style.background='var(--bg-primary)';btnList.style.color='var(--text-primary)';}
     if(btnCal){btnCal.style.background='transparent';btnCal.style.color='var(--text-secondary)';}
+    if(mobBtnList){mobBtnList.style.background='var(--bg-primary)';mobBtnList.style.color='var(--text-primary)';}
+    if(mobBtnCal){mobBtnCal.style.background='transparent';mobBtnCal.style.color='var(--text-secondary)';}
     if(filterBtn)filterBtn.style.display='';
     renderList();
   }
