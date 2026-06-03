@@ -2640,8 +2640,9 @@ async function fetchWeather(){
     }catch(e){}
   }
   try{
-    const url='https://gem-api.open-meteo.com/v1/gem'
+    const url='https://api.open-meteo.com/v1/forecast'
       +'?latitude='+WEATHER_LAT+'&longitude='+WEATHER_LON
+      +'&models=gem_seamless'
       +'&hourly=temperature_2m,precipitation,snowfall,windspeed_10m,weathercode'
       +'&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,weathercode,sunrise,sunset'
       +'&timezone=America%2FToronto&forecast_days=14';
