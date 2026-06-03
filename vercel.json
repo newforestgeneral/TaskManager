@@ -28,7 +28,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https://tymspwfnykujydgzzzhd.supabase.co wss://tymspwfnykujydgzzzhd.supabase.co https://gem-api.open-meteo.com https://api.anthropic.com; img-src 'self' data: https://tymspwfnykujydgzzzhd.supabase.co; media-src 'self' blob:; frame-ancestors 'none';"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https://tymspwfnykujydgzzzhd.supabase.co wss://tymspwfnykujydgzzzhd.supabase.co https://api.open-meteo.com https://api.anthropic.com; img-src 'self' data: https://tymspwfnykujydgzzzhd.supabase.co; media-src 'self' blob:; frame-ancestors 'none';"
         }
       ]
     }
