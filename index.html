@@ -51,9 +51,6 @@
     .sidebar-section-label{font-size:10px;font-weight:600;letter-spacing:0.8px;
       text-transform:uppercase;color:var(--text-tertiary);padding:0 8px;margin-bottom:4px;
       display:flex;align-items:center;justify-content:space-between}
-    .sidebar-section-label .sl-toggle{font-size:10px;color:var(--text-tertiary);
-      cursor:pointer;transition:transform 0.15s;display:inline-block;line-height:1}
-    .sidebar-section-label .sl-toggle.open{transform:rotate(90deg)}
     .nav-item{display:flex;align-items:center;gap:9px;padding:7px 10px;
       border-radius:var(--radius-md);cursor:pointer;color:var(--text-secondary);
       font-size:13px;transition:all 0.12s;user-select:none}
@@ -62,6 +59,29 @@
     .nav-icon{font-size:15px;width:20px;text-align:center}
     .nav-badge{margin-left:auto;font-size:10px;background:var(--bg-tertiary);
       color:var(--text-secondary);padding:1px 7px;border-radius:999px;font-weight:500}
+    /* SIDEBAR FILTER DROPDOWNS */
+    .sf-wrap{position:relative;margin:0 0 4px}
+    .sf-btn{display:flex;align-items:center;gap:7px;width:100%;padding:7px 10px;
+      border:0.5px solid var(--border-md);border-radius:var(--radius-md);
+      background:var(--bg-secondary);cursor:pointer;font-size:13px;color:var(--text-primary);
+      text-align:left;box-sizing:border-box;transition:background 0.1s}
+    .sf-btn:hover,.sf-btn.open{background:var(--bg-tertiary)}
+    .sf-btn.filtered{border-color:var(--accent)}
+    .sf-icon{flex-shrink:0;font-size:14px;line-height:1}
+    .sf-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+    .sf-count{font-size:11px;color:var(--text-tertiary);background:var(--bg-primary);
+      padding:1px 6px;border-radius:8px;border:0.5px solid var(--border-md);flex-shrink:0}
+    .sf-chev{font-size:9px;color:var(--text-tertiary);flex-shrink:0;transition:transform 0.15s}
+    .sf-btn.open .sf-chev{transform:rotate(180deg)}
+    .sf-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 3px);
+      background:var(--bg-primary);border:0.5px solid var(--border-md);
+      border-radius:var(--radius-md);z-index:150;overflow:hidden;
+      box-shadow:0 4px 12px rgba(0,0,0,.1)}
+    .sf-menu.open{display:block}
+    .sf-row{display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:13px;
+      cursor:pointer;color:var(--text-secondary);user-select:none}
+    .sf-row:hover{background:var(--bg-secondary);color:var(--text-primary)}
+    .sf-row.active{background:var(--bg-tertiary);color:var(--text-primary);font-weight:500}
     .sidebar-user{padding:11px 14px;border-top:0.5px solid var(--border);
       display:flex;align-items:center;gap:10px;cursor:pointer}
     .sidebar-user:hover{background:var(--bg-secondary)}
@@ -184,6 +204,14 @@
 
     /* INLINE EXPAND */
     .email-item{display:flex;flex-direction:column}
+    .list-date-header{display:flex;align-items:center;gap:8px;padding:8px 14px 5px;
+      font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;
+      letter-spacing:0.05em;background:var(--bg-primary);border-bottom:0.5px solid var(--border);
+      position:sticky;top:0;z-index:10}
+    .list-date-header.past-due .ldh-label{color:var(--danger)}
+    .ldh-label{flex:1}
+    .ldh-count{background:var(--bg-tertiary);color:var(--text-tertiary);
+      font-size:10px;padding:1px 6px;border-radius:8px;border:0.5px solid var(--border-md)}
     .email-row.open{background:var(--bg-secondary)}
     .email-row.open .er-chevron{transform:rotate(90deg)}
     .er-chevron{font-size:11px;color:var(--text-tertiary);transition:transform 0.15s;flex-shrink:0}
@@ -325,7 +353,7 @@
     .pct-label{font-size:12px;font-weight:500;min-width:34px;text-align:right}
 
     /* MODAL */
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.38);z-index:200;
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.38);z-index:2500;
       display:flex;align-items:center;justify-content:center;padding:16px}
     .modal{background:var(--bg-primary);border-radius:var(--radius-lg);width:100%;
       max-width:620px;max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-md)}
@@ -632,64 +660,110 @@
   </div>
   <div class="sidebar-scroll">
     <div class="sidebar-section">
-      <div class="sidebar-section-label">Stage</div>
-      <div class="nav-item active" id="snAll" onclick="sideFilter('stage','all','snAll','sn')">
-        <span class="nav-icon" style="color:var(--text-tertiary)">●</span> All tasks <span class="nav-badge" id="nb-all">0</span></div>
-      <div class="nav-item" id="snCreated" onclick="sideFilter('stage','created','snCreated','sn')">
-        <span class="nav-icon" style="color:#64748B">●</span> Created <span class="nav-badge" id="nb-created">0</span></div>
-      <div class="nav-item" id="snAssigned" onclick="sideFilter('stage','assigned','snAssigned','sn')">
-        <span class="nav-icon" style="color:#1D4ED8">●</span> Assigned <span class="nav-badge" id="nb-assigned">0</span></div>
-      <div class="nav-item" id="snInprogress" onclick="sideFilter('stage','inprogress','snInprogress','sn')">
-        <span class="nav-icon" style="color:#6D28D9">●</span> In progress <span class="nav-badge" id="nb-inprogress">0</span></div>
-      <div class="nav-item" id="snReview" onclick="sideFilter('stage','review','snReview','sn')">
-        <span class="nav-icon" style="color:#B45309">●</span> Review <span class="nav-badge" id="nb-review">0</span></div>
-      <div class="nav-item" id="snComplete" onclick="sideFilter('stage','complete','snComplete','sn')">
-        <span class="nav-icon" style="color:#065F46">●</span> Complete <span class="nav-badge" id="nb-complete">0</span></div>
+      <div class="sidebar-section-label">Filters</div>
+      <!-- Stage dropdown -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-stage" onclick="toggleSfDropdown('stage')">
+          <span class="sf-icon" id="sfIcon-stage" style="color:var(--text-tertiary)">●</span>
+          <span class="sf-label" id="sfLabel-stage">All stages</span>
+          <span class="sf-count" id="sfCount-stage">0</span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-stage">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('stage','all')"><span style="color:var(--text-tertiary)">●</span> All tasks <span class="nav-badge" id="nb-all">0</span></div>
+          <div class="sf-row" data-val="created" onclick="sfFilter('stage','created')"><span style="color:#64748B">●</span> Created <span class="nav-badge" id="nb-created">0</span></div>
+          <div class="sf-row" data-val="assigned" onclick="sfFilter('stage','assigned')"><span style="color:#1D4ED8">●</span> Assigned <span class="nav-badge" id="nb-assigned">0</span></div>
+          <div class="sf-row" data-val="inprogress" onclick="sfFilter('stage','inprogress')"><span style="color:#6D28D9">●</span> In progress <span class="nav-badge" id="nb-inprogress">0</span></div>
+          <div class="sf-row" data-val="review" onclick="sfFilter('stage','review')"><span style="color:#B45309">●</span> Review <span class="nav-badge" id="nb-review">0</span></div>
+          <div class="sf-row" data-val="complete" onclick="sfFilter('stage','complete')"><span style="color:#065F46">●</span> Complete <span class="nav-badge" id="nb-complete">0</span></div>
+        </div>
+      </div>
+      <!-- Priority dropdown -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-priority" onclick="toggleSfDropdown('priority')">
+          <span class="sf-icon" id="sfIcon-priority" style="color:var(--text-tertiary)">●</span>
+          <span class="sf-label" id="sfLabel-priority">All priorities</span>
+          <span class="sf-count" id="sfCount-priority">0</span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-priority">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('priority','all')"><span style="color:var(--text-tertiary)">●</span> All priorities <span class="nav-badge" id="nb-p-all">0</span></div>
+          <div class="sf-row" data-val="urgent" onclick="sfFilter('priority','urgent')"><span style="color:#E24B4A">●</span> Urgent <span class="nav-badge" id="nb-p-urgent">0</span></div>
+          <div class="sf-row" data-val="high" onclick="sfFilter('priority','high')"><span style="color:#EF9F27">●</span> High <span class="nav-badge" id="nb-p-high">0</span></div>
+          <div class="sf-row" data-val="medium" onclick="sfFilter('priority','medium')"><span style="color:#378ADD">●</span> Medium <span class="nav-badge" id="nb-p-medium">0</span></div>
+          <div class="sf-row" data-val="low" onclick="sfFilter('priority','low')"><span style="color:#888780">●</span> Low <span class="nav-badge" id="nb-p-low">0</span></div>
+        </div>
+      </div>
+      <!-- Lineage dropdown -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-lineage" onclick="toggleSfDropdown('lineage')">
+          <span class="sf-icon" id="sfIcon-lineage" style="color:var(--text-tertiary)">◈</span>
+          <span class="sf-label" id="sfLabel-lineage">All lineages</span>
+          <span class="sf-count" id="sfCount-lineage">0</span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-lineage">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('lineage','all')"><span style="color:var(--text-tertiary)">◈</span> All lineages <span class="nav-badge" id="nb-l-all">0</span></div>
+          <div class="sf-row" data-val="Land & Forest" onclick="sfFilter('lineage','Land \x26 Forest')"><span style="color:var(--text-tertiary)">◈</span> Land &amp; Forest <span class="nav-badge" id="nb-l-Land">0</span></div>
+          <div class="sf-row" data-val="Farm & Garden" onclick="sfFilter('lineage','Farm \x26 Garden')"><span style="color:var(--text-tertiary)">◈</span> Farm &amp; Garden <span class="nav-badge" id="nb-l-Farm">0</span></div>
+          <div class="sf-row" data-val="Building Improvements" onclick="sfFilter('lineage','Building Improvements')"><span style="color:var(--text-tertiary)">◈</span> Building Improvements <span class="nav-badge" id="nb-l-BldImpr">0</span></div>
+          <div class="sf-row" data-val="Other Building" onclick="sfFilter('lineage','Other Building')"><span style="color:var(--text-tertiary)">◈</span> Other Building <span class="nav-badge" id="nb-l-OtherBld">0</span></div>
+          <div class="sf-row" data-val="Site Infrastructure" onclick="sfFilter('lineage','Site Infrastructure')"><span style="color:var(--text-tertiary)">◈</span> Site Infrastructure <span class="nav-badge" id="nb-l-SiteInfra">0</span></div>
+          <div class="sf-row" data-val="Housekeeping" onclick="sfFilter('lineage','Housekeeping')"><span style="color:var(--text-tertiary)">◈</span> Housekeeping <span class="nav-badge" id="nb-l-House">0</span></div>
+          <div class="sf-row" data-val="Kitchen" onclick="sfFilter('lineage','Kitchen')"><span style="color:var(--text-tertiary)">◈</span> Kitchen <span class="nav-badge" id="nb-l-Kitchen">0</span></div>
+          <div class="sf-row" data-val="Dining" onclick="sfFilter('lineage','Dining')"><span style="color:var(--text-tertiary)">◈</span> Dining <span class="nav-badge" id="nb-l-Dining">0</span></div>
+          <div class="sf-row" data-val="Administration" onclick="sfFilter('lineage','Administration')"><span style="color:var(--text-tertiary)">◈</span> Administration <span class="nav-badge" id="nb-l-Admin">0</span></div>
+        </div>
+      </div>
+      <!-- Users (assignee) dropdown — populated dynamically -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-assignee" onclick="toggleSfDropdown('assignee')">
+          <span class="sf-icon" style="color:var(--text-tertiary)">👤</span>
+          <span class="sf-label" id="sfLabel-assignee">All users</span>
+          <span class="sf-count" id="sfCount-assignee">0</span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-assignee">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('assignee','all')"><span style="color:var(--text-tertiary)">●</span> All users</div>
+        </div>
+      </div>
+      <!-- Weather dependent dropdown -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-weatherDependent" onclick="toggleSfDropdown('weatherDependent')">
+          <span class="sf-icon" style="color:var(--text-tertiary)">🌤</span>
+          <span class="sf-label" id="sfLabel-weatherDependent">Weather dep.</span>
+          <span class="sf-count" id="sfCount-weatherDependent"></span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-weatherDependent">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('weatherDependent','all')">All tasks</div>
+          <div class="sf-row" data-val="yes" onclick="sfFilter('weatherDependent','yes')">☁️ Yes — weather dependent</div>
+          <div class="sf-row" data-val="no" onclick="sfFilter('weatherDependent','no')">✅ No — not dependent</div>
+          <div class="sf-row" data-val="blank" onclick="sfFilter('weatherDependent','blank')">— Not set</div>
+        </div>
+      </div>
+      <!-- Due date dropdown -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-dueDate" onclick="toggleSfDropdown('dueDate')">
+          <span class="sf-icon" style="color:var(--text-tertiary)">📅</span>
+          <span class="sf-label" id="sfLabel-dueDate">All dates</span>
+          <span class="sf-count" id="sfCount-dueDate"></span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-dueDate">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('dueDate','all')">All dates</div>
+          <div class="sf-row" data-val="today" onclick="sfFilter('dueDate','today')">📌 Today</div>
+          <div class="sf-row" data-val="tomorrow" onclick="sfFilter('dueDate','tomorrow')">📌 Tomorrow</div>
+          <div class="sf-row" data-val="this-week" onclick="sfFilter('dueDate','this-week')">📆 This week</div>
+          <div class="sf-row" data-val="next-week" onclick="sfFilter('dueDate','next-week')">📆 Next week</div>
+          <div class="sf-row" data-val="this-month" onclick="sfFilter('dueDate','this-month')">🗓 This month</div>
+        </div>
+      </div>
     </div>
     <div class="sidebar-section manager-only">
       <div class="sidebar-section-label">Admin</div>
       <div class="nav-item" id="snArchived" onclick="switchViewMode('archived')">
         <span class="nav-icon" style="color:var(--text-tertiary)">▣</span> Archived <span class="nav-badge" id="nb-archived">0</span>
-      </div>
-    </div>
-    <div class="sidebar-section">
-      <div class="sidebar-section-label">Priority</div>
-      <div class="nav-item active" id="spAll" onclick="sideFilter('priority','all','spAll','sp')">
-        <span class="nav-icon" style="color:var(--text-tertiary)">●</span> All priorities <span class="nav-badge" id="nb-p-all">0</span></div>
-      <div class="nav-item" id="spUrgent" onclick="sideFilter('priority','urgent','spUrgent','sp')">
-        <span class="nav-icon" style="color:#E24B4A">●</span> Urgent <span class="nav-badge" id="nb-p-urgent">0</span></div>
-      <div class="nav-item" id="spHigh" onclick="sideFilter('priority','high','spHigh','sp')">
-        <span class="nav-icon" style="color:#EF9F27">●</span> High <span class="nav-badge" id="nb-p-high">0</span></div>
-      <div class="nav-item" id="spMedium" onclick="sideFilter('priority','medium','spMedium','sp')">
-        <span class="nav-icon" style="color:#378ADD">●</span> Medium <span class="nav-badge" id="nb-p-medium">0</span></div>
-      <div class="nav-item" id="spLow" onclick="sideFilter('priority','low','spLow','sp')">
-        <span class="nav-icon" style="color:#888780">●</span> Low <span class="nav-badge" id="nb-p-low">0</span></div>
-    </div>
-    <div class="sidebar-section">
-      <div class="sidebar-section-label" onclick="toggleLineageSidebar()" style="cursor:pointer">
-        Lineage <span class="sl-toggle" id="lineageToggle">›</span>
-      </div>
-      <div id="lineageItems" class="hidden">
-        <div class="nav-item active" id="slAll" onclick="sideFilter('lineage','all','slAll','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> All lineages <span class="nav-badge" id="nb-l-all">0</span></div>
-        <div class="nav-item" id="sl-Land" onclick="sideFilter('lineage','Land & Forest','sl-Land','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Land &amp; Forest <span class="nav-badge" id="nb-l-Land">0</span></div>
-        <div class="nav-item" id="sl-Farm" onclick="sideFilter('lineage','Farm & Garden','sl-Farm','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Farm &amp; Garden <span class="nav-badge" id="nb-l-Farm">0</span></div>
-        <div class="nav-item" id="sl-BldImpr" onclick="sideFilter('lineage','Building Improvements','sl-BldImpr','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Building Improvements <span class="nav-badge" id="nb-l-BldImpr">0</span></div>
-        <div class="nav-item" id="sl-OtherBld" onclick="sideFilter('lineage','Other Building','sl-OtherBld','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Other Building <span class="nav-badge" id="nb-l-OtherBld">0</span></div>
-        <div class="nav-item" id="sl-SiteInfra" onclick="sideFilter('lineage','Site Infrastructure','sl-SiteInfra','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Site Infrastructure <span class="nav-badge" id="nb-l-SiteInfra">0</span></div>
-        <div class="nav-item" id="sl-House" onclick="sideFilter('lineage','Housekeeping','sl-House','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Housekeeping <span class="nav-badge" id="nb-l-House">0</span></div>
-        <div class="nav-item" id="sl-Kitchen" onclick="sideFilter('lineage','Kitchen','sl-Kitchen','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Kitchen <span class="nav-badge" id="nb-l-Kitchen">0</span></div>
-        <div class="nav-item" id="sl-Dining" onclick="sideFilter('lineage','Dining','sl-Dining','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Dining <span class="nav-badge" id="nb-l-Dining">0</span></div>
-        <div class="nav-item" id="sl-Admin" onclick="sideFilter('lineage','Administration','sl-Admin','sl')">
-          <span class="nav-icon" style="font-size:12px">◈</span> Administration <span class="nav-badge" id="nb-l-Admin">0</span></div>
       </div>
     </div>
   </div>
@@ -1065,7 +1139,7 @@ const AV_COLS=[
 ];
 
 let tasks=[],openId=null,editId=null,currentView='list';
-let filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
+let filter={stage:'all',lineage:'all',assignee:'all',priority:'all',weatherDependent:'all',dueDate:'all',search:''};
 let currentUser=null,currentRole='worker',currentProfile=null,allProfiles=[];
 let workspaces=[],currentWorkspace=null;
 let viewMode='active'; // 'active' | 'archived'
@@ -1349,6 +1423,37 @@ function filteredTasks(){
     if(filter.lineage!=='all'&&t.lineage!==filter.lineage)return false;
     if(filter.assignee!=='all'&&!t.assignees.includes(filter.assignee))return false;
     if(filter.priority!=='all'&&t.priority!==filter.priority)return false;
+    if(filter.weatherDependent!=='all'){
+      const wd=t.weatherDependent||'';
+      if(filter.weatherDependent==='blank'&&wd!=='')return false;
+      if(filter.weatherDependent==='yes'&&wd!=='yes')return false;
+      if(filter.weatherDependent==='no'&&wd!=='no')return false;
+    }
+    if(filter.dueDate!=='all'){
+      if(!t.dueDate)return false;
+      const d=t.dueDate.slice(0,10);
+      const now=new Date();
+      const pad=n=>String(n).padStart(2,'0');
+      const todayStr=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+      const tmrw=new Date(now);tmrw.setDate(now.getDate()+1);
+      const tmrwStr=`${tmrw.getFullYear()}-${pad(tmrw.getMonth()+1)}-${pad(tmrw.getDate())}`;
+      if(filter.dueDate==='today'&&d!==todayStr)return false;
+      if(filter.dueDate==='tomorrow'&&d!==tmrwStr)return false;
+      if(filter.dueDate==='this-week'||filter.dueDate==='next-week'){
+        const day=now.getDay();
+        const mon=new Date(now);mon.setDate(now.getDate()-(day===0?6:day-1)+(filter.dueDate==='next-week'?7:0));
+        const sun=new Date(mon);sun.setDate(mon.getDate()+6);
+        const ms=`${mon.getFullYear()}-${pad(mon.getMonth()+1)}-${pad(mon.getDate())}`;
+        const ss=`${sun.getFullYear()}-${pad(sun.getMonth()+1)}-${pad(sun.getDate())}`;
+        if(d<ms||d>ss)return false;
+      }
+      if(filter.dueDate==='this-month'){
+        const y=now.getFullYear(),m=now.getMonth();
+        const start=`${y}-${pad(m+1)}-01`;
+        const end=`${y}-${pad(m+1)}-${pad(new Date(y,m+1,0).getDate())}`;
+        if(d<start||d>end)return false;
+      }
+    }
     if(filter.search){const q=filter.search.toLowerCase();
       const inName=t.name.toLowerCase().includes(q);
       const inDesc=(t.description||'').toLowerCase().includes(q);
@@ -1367,11 +1472,46 @@ function renderList(){
     updateBulkBar();return;
   }
   if(!ft.length){el.innerHTML='<div class="email-list-empty">No tasks found</div>';updateBulkBar();return;}
-  const SECTION_ORDER=['created','assigned','inprogress','review','complete'];
-  const SECTION_LABELS={created:'To be Assigned',assigned:'Assigned',inprogress:'In Progress',review:'In Review',complete:'Complete'};
-  const groups={};
-  SECTION_ORDER.forEach(s=>groups[s]=[]);
-  ft.forEach(t=>{const s=t.stage||'created';if(groups[s])groups[s].push(t);});
+  // Build date buckets
+  const now=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  const todayStr=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  const STAGE_ORDER=['created','assigned','inprogress','review','complete'];
+  const stageRank=Object.fromEntries(STAGE_ORDER.map((s,i)=>[s,i]));
+  const sortTasks=arr=>[...arr].sort((a,b)=>{
+    const sr=(stageRank[a.stage||'created']||0)-(stageRank[b.stage||'created']||0);
+    if(sr!==0)return sr;
+    return(a.name||'').localeCompare(b.name||'');
+  });
+
+  const buckets={}; // key: date string | 'past' | 'none'
+  const bucketOrder=[];
+  ft.forEach(t=>{
+    const d=t.dueDate?t.dueDate.slice(0,10):null;
+    let key;
+    if(!d) key='none';
+    else if(d<todayStr) key='past';
+    else key=d;
+    if(!buckets[key]){buckets[key]=[];if(!bucketOrder.includes(key))bucketOrder.push(key);}
+    buckets[key].push(t);
+  });
+  // Sort bucket keys: past first, then dates asc, none last
+  bucketOrder.sort((a,b)=>{
+    if(a==='past')return -1;if(b==='past')return 1;
+    if(a==='none')return 1;if(b==='none')return -1;
+    return a<b?-1:1;
+  });
+
+  function bucketLabel(key){
+    if(key==='past')return'Past due';
+    if(key==='none')return'No due date';
+    if(key===todayStr){
+      const d=new Date(key+'T12:00:00');
+      return`Today · ${d.toLocaleDateString('en-CA',{month:'long',day:'numeric'})}`;}
+    const d=new Date(key+'T12:00:00');
+    return d.toLocaleDateString('en-CA',{weekday:'short',month:'long',day:'numeric'});
+  }
+
   function taskRow(t){
     const sm=STAGE[t.stage],pm=PRIORITY[t.priority]||PRIORITY.medium;
     const od=isOverdue(t.dueDate,t.stage);
@@ -1406,9 +1546,11 @@ function renderList(){
     </div>`;
   }
   let html='';
-  SECTION_ORDER.forEach(s=>{
-    const group=groups[s];
+  bucketOrder.forEach(key=>{
+    const group=sortTasks(buckets[key]);
     if(!group.length)return;
+    const isPast=key==='past';
+    html+=`<div class="list-date-header${isPast?' past-due':''}"><span class="ldh-label">${bucketLabel(key)}</span><span class="ldh-count">${group.length}</span></div>`;
     html+=group.map(taskRow).join('');
   });
   el.innerHTML=html;
@@ -1642,6 +1784,26 @@ function closeCalDetail(){
   document.getElementById('calDetailModal').style.display='none';
   // Refresh calendar so any edits (stage, %, etc.) are reflected
   renderCalendar();
+}
+
+function openCalDayList(ds){
+  const dayTasks=filteredTasks().filter(t=>{const d=t.dueDate||t.startDate;return d&&(typeof d==='string'?d:d).slice(0,10)===ds;});
+  if(!dayTasks.length)return;
+  const d=new Date(ds+'T12:00:00');
+  const label=d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'});
+  const body=document.getElementById('calDetailBody');
+  if(body)body.innerHTML=`<div style="padding:12px 16px;font-size:13px;font-weight:600;color:var(--text-secondary);border-bottom:0.5px solid var(--border)">${escHtml(label)}</div>`+
+    `<div style="max-height:60vh;overflow-y:auto">`+
+    dayTasks.map(t=>{
+      const c=chipColors(t.lineage||'');
+      const od=t.stage!=='complete'&&t.dueDate&&t.dueDate.slice(0,10)<new Date().toISOString().slice(0,10);
+      return`<div style="padding:10px 16px;border-bottom:0.5px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px" onclick="openCalDetail('${t.id}')">
+        <span style="width:8px;height:8px;border-radius:50%;background:${od?'#E24B4A':c.bg};flex-shrink:0"></span>
+        <span style="flex:1;font-size:13px">${escHtml(t.name)}</span>
+        <span style="font-size:11px;color:var(--text-tertiary)">${STAGE[t.stage]?.label||t.stage}</span>
+      </div>`;
+    }).join('')+`</div>`;
+  document.getElementById('calDetailModal').style.display='flex';
 }
 
 async function bumpToInProgress(id){
@@ -2495,49 +2657,130 @@ function updateTopbarTitle(){
 
 function dropFilter(type,val){
   filter[type]=val;
-  if(type==='stage'){
-    const m={all:'snAll',created:'snCreated',assigned:'snAssigned',inprogress:'snInprogress',review:'snReview',complete:'snComplete'};
-    document.querySelectorAll('.nav-item[id^="sn"]').forEach(n=>n.classList.remove('active'));
-    if(m[val])document.getElementById(m[val])?.classList.add('active');
-  }
-  if(type==='lineage'){
-    const m={'all':'slAll','Land & Forest':'sl-Land','Farm & Garden':'sl-Farm','Building Improvements':'sl-BldImpr','Other Building':'sl-OtherBld','Site Infrastructure':'sl-SiteInfra','Housekeeping':'sl-House','Kitchen':'sl-Kitchen','Dining':'sl-Dining','Administration':'sl-Admin'};
-    document.querySelectorAll('.nav-item[id^="sl"]').forEach(n=>n.classList.remove('active'));
-    if(m[val])document.getElementById(m[val])?.classList.add('active');
-    // auto-expand lineage section when a lineage is selected
-    if(val!=='all'){const items=document.getElementById('lineageItems');const tog=document.getElementById('lineageToggle');if(items){items.classList.remove('hidden');if(tog)tog.classList.add('open');}}
-  }
-  if(type==='priority'){
-    const m={all:'spAll',urgent:'spUrgent',high:'spHigh',medium:'spMedium',low:'spLow'};
-    document.querySelectorAll('.nav-item[id^="sp"]').forEach(n=>n.classList.remove('active'));
-    if(m[val])document.getElementById(m[val])?.classList.add('active');
-  }
+  // Sync sidebar dropdown rows
+  document.querySelectorAll(`#sfMenu-${type} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val===val));
+  // Sync filterBar select
+  const selMap={stage:'fsStage',lineage:'fsLineage',priority:'fsPriority'};
+  if(selMap[type]){const s=document.getElementById(selMap[type]);if(s)s.value=val;}
   render();
 }
 
 function switchViewMode(mode){
   viewMode=mode;
   closeDetail();
-  // Clear all nav active states, highlight archived if switching there
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   if(mode==='archived'){
     document.getElementById('snArchived')?.classList.add('active');
   } else {
-    document.getElementById('snAll')?.classList.add('active');
     filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
+    // Reset all sf-row active states to 'all'
+    ['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{
+      document.querySelectorAll(`#sfMenu-${t} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val==='all'));
+    });
   }
   loadData();
 }
 
-function sideFilter(type,val,activeId,prefix){
+// Sidebar filter dropdown functions
+let sfOpen=null;
+function toggleSfDropdown(type){
+  const menu=document.getElementById('sfMenu-'+type);
+  const btn=document.getElementById('sfBtn-'+type);
+  if(!menu||!btn)return;
+  const isOpen=menu.classList.contains('open');
+  ['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{
+    document.getElementById('sfMenu-'+t)?.classList.remove('open');
+    document.getElementById('sfBtn-'+t)?.classList.remove('open');
+  });
+  if(!isOpen){menu.classList.add('open');btn.classList.add('open');sfOpen=type;}
+  else sfOpen=null;
+}
+document.addEventListener('click',e=>{
+  if(sfOpen&&!e.target.closest('.sf-wrap')){
+    document.getElementById('sfMenu-'+sfOpen)?.classList.remove('open');
+    document.getElementById('sfBtn-'+sfOpen)?.classList.remove('open');
+    sfOpen=null;
+  }
+},true);
+
+function sfFilter(type,val){
   if(viewMode==='archived'){switchViewMode('active');return;}
   filter[type]=val;
-  document.querySelectorAll(`.nav-item[id^="${prefix}"]`).forEach(n=>n.classList.remove('active'));
-  document.getElementById(activeId)?.classList.add('active');
+  document.querySelectorAll(`#sfMenu-${type} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val===val));
+  // Close dropdown
+  document.getElementById('sfMenu-'+type)?.classList.remove('open');
+  document.getElementById('sfBtn-'+type)?.classList.remove('open');
+  sfOpen=null;
+  // Sync filterBar
   const selMap={stage:'fsStage',lineage:'fsLineage',priority:'fsPriority'};
   if(selMap[type]){const s=document.getElementById(selMap[type]);if(s)s.value=val;}
   render();
 }
+
+function updateSfBtns(){
+  const stageCfg={all:{color:'var(--text-tertiary)',label:'All stages'},created:{color:'#64748B',label:'Created'},assigned:{color:'#1D4ED8',label:'Assigned'},inprogress:{color:'#6D28D9',label:'In progress'},review:{color:'#B45309',label:'Review'},complete:{color:'#065F46',label:'Complete'}};
+  const priCfg={all:{color:'var(--text-tertiary)',label:'All priorities'},urgent:{color:'#E24B4A',label:'Urgent'},high:{color:'#EF9F27',label:'High'},medium:{color:'#378ADD',label:'Medium'},low:{color:'#888780',label:'Low'}};
+  // Stage
+  const sv=filter.stage||'all';
+  const sc=stageCfg[sv]||stageCfg.all;
+  const stageCount=document.getElementById(sv==='all'?'nb-all':'nb-'+sv)?.textContent||'0';
+  const sfStage=document.getElementById('sfBtn-stage');
+  if(sfStage){
+    document.getElementById('sfIcon-stage').style.color=sc.color;
+    document.getElementById('sfLabel-stage').textContent=sc.label;
+    document.getElementById('sfCount-stage').textContent=stageCount;
+    sfStage.classList.toggle('filtered',sv!=='all');
+  }
+  // Priority
+  const pv=filter.priority||'all';
+  const pc=priCfg[pv]||priCfg.all;
+  const priCountId={all:'nb-p-all',urgent:'nb-p-urgent',high:'nb-p-high',medium:'nb-p-medium',low:'nb-p-low'};
+  const priCount=document.getElementById(priCountId[pv])?.textContent||'0';
+  const sfPri=document.getElementById('sfBtn-priority');
+  if(sfPri){
+    document.getElementById('sfIcon-priority').style.color=pc.color;
+    document.getElementById('sfLabel-priority').textContent=pc.label;
+    document.getElementById('sfCount-priority').textContent=priCount;
+    sfPri.classList.toggle('filtered',pv!=='all');
+  }
+  // Lineage
+  const lv=filter.lineage||'all';
+  const lvLabel=lv==='all'?'All lineages':lv;
+  const linCountEl=document.querySelector(`#sfMenu-lineage .sf-row[data-val="${lv}"] .nav-badge`);
+  const sfLin=document.getElementById('sfBtn-lineage');
+  if(sfLin){
+    document.getElementById('sfLabel-lineage').textContent=lvLabel.length>17?lvLabel.slice(0,15)+'…':lvLabel;
+    document.getElementById('sfCount-lineage').textContent=linCountEl?.textContent||'0';
+    sfLin.classList.toggle('filtered',lv!=='all');
+  }
+  // Assignee
+  const av=filter.assignee||'all';
+  const sfAss=document.getElementById('sfBtn-assignee');
+  if(sfAss){
+    document.getElementById('sfLabel-assignee').textContent=av==='all'?'All users':(av.length>15?av.slice(0,13)+'…':av);
+    const assCount=av==='all'?tasks.length:tasks.filter(t=>(t.assignees||[]).includes(av)).length;
+    document.getElementById('sfCount-assignee').textContent=assCount;
+    sfAss.classList.toggle('filtered',av!=='all');
+  }
+  // Weather dependent
+  const wdLabels={all:'Weather dep.',yes:'Yes — weather dep.',no:'No — not dependent',blank:'Not set'};
+  const wv=filter.weatherDependent||'all';
+  const sfWd=document.getElementById('sfBtn-weatherDependent');
+  if(sfWd){
+    document.getElementById('sfLabel-weatherDependent').textContent=wdLabels[wv]||'Weather dep.';
+    sfWd.classList.toggle('filtered',wv!=='all');
+  }
+  // Due date
+  const ddLabels={all:'All dates',today:'Today',tomorrow:'Tomorrow','this-week':'This week','next-week':'Next week','this-month':'This month'};
+  const dv=filter.dueDate||'all';
+  const sfDd=document.getElementById('sfBtn-dueDate');
+  if(sfDd){
+    document.getElementById('sfLabel-dueDate').textContent=ddLabels[dv]||'All dates';
+    sfDd.classList.toggle('filtered',dv!=='all');
+  }
+}
+
+function sideFilter(type,val,activeId,prefix){sfFilter(type,val);}
 
 function updateBadges(){
   const cnt={created:0,assigned:0,inprogress:0,review:0,complete:0};
@@ -2570,28 +2813,33 @@ function updateBadges(){
     'Other Building':'nb-l-OtherBld','Site Infrastructure':'nb-l-SiteInfra','Housekeeping':'nb-l-House',
     'Kitchen':'nb-l-Kitchen','Dining':'nb-l-Dining','Administration':'nb-l-Admin'};
   Object.entries(linMap).forEach(([lin,id])=>{const el=document.getElementById(id);if(el)el.textContent=linCnt[lin]||0;});
+  updateSfBtns();
 }
 
 function updateAssigneeSelect(){
-  const sel=document.getElementById('fsAssignee');if(!sel)return;
+  const sel=document.getElementById('fsAssignee');
   const cur=filter.assignee;
-  // Use allProfiles so every person appears regardless of current task assignments
   const names=allProfiles.length
     ?allProfiles.map(p=>p.name).sort()
     :[...new Set(tasks.flatMap(t=>t.assignees))].sort();
-  sel.innerHTML='<option value="all">All assignees</option>'+
-    names.map(a=>`<option value="${escHtml(a)}"${cur===a?' selected':''}>${escHtml(a)}</option>`).join('');
-  sel.value=cur;
+  if(sel){
+    sel.innerHTML='<option value="all">All assignees</option>'+
+      names.map(a=>`<option value="${escHtml(a)}"${cur===a?' selected':''}>${escHtml(a)}</option>`).join('');
+    sel.value=cur;
+  }
+  // Rebuild sidebar assignee dropdown
+  const menu=document.getElementById('sfMenu-assignee');
+  if(menu){
+    // Count tasks per assignee (from all visible tasks in current workspace)
+    const taskCounts={};
+    tasks.forEach(t=>(t.assignees||[]).forEach(a=>{taskCounts[a]=(taskCounts[a]||0)+1;}));
+    const countBadge=n=>`<span class="sf-count">${n}</span>`;
+    menu.innerHTML=`<div class="sf-row${cur==='all'?' active':''}" data-val="all" onclick="sfFilter('assignee','all')"><span style="flex:1">All users</span>${countBadge(tasks.length)}</div>`+
+      names.map(a=>`<div class="sf-row${cur===a?' active':''}" data-val="${escHtml(a)}" onclick="sfFilter('assignee','${escHtml(a).replace(/'/g,"\\'")}')"><span style="flex:1">${escHtml(a)}</span>${countBadge(taskCounts[a]||0)}</div>`).join('');
+  }
 }
 
-function toggleLineageSidebar(){
-  const items=document.getElementById('lineageItems');
-  const toggle=document.getElementById('lineageToggle');
-  if(!items)return;
-  const open=!items.classList.contains('hidden');
-  items.classList.toggle('hidden',open);
-  if(toggle)toggle.classList.toggle('open',!open);
-}
+function toggleLineageSidebar(){} // replaced by sf-dropdown
 
 // ── VIEWS ──
 function setView(){if(currentView==='calendar')renderCalendar();else renderList();}
@@ -3118,7 +3366,7 @@ function renderCalendar(){
       return`<div class="cal-task-chip" style="background:${bgColor};color:${fgColor}" onclick="openCalDetail('${t.id}')" title="${escHtml(t.name)}">${escHtml(calShortName(t))}</div>`;
     }).join('');
 
-    const overflowHtml=overflow>0?`<div class="cal-overflow">+${overflow} more</div>`:'';
+    const overflowHtml=overflow>0?`<div class="cal-overflow" style="cursor:pointer" onclick="openCalDayList('${ds}')">+${overflow} more</div>`:'';
 
     // Weather icon for this day (only future days within forecast range)
     const wxDay=weatherForecast?(weatherForecast.find(w=>w.date===ds)||(ds===todayStr?weatherForecast[0]:null)):null;
