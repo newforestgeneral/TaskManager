@@ -425,8 +425,8 @@
 
     /* CALENDAR VIEW */
     .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
-    .cal-header-cell{background:var(--bg-secondary);padding:6px 0;text-align:center;font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-tertiary)}
-    .cal-cell{background:var(--bg-primary);min-height:90px;padding:6px;display:flex;flex-direction:column;gap:3px;vertical-align:top}
+    .cal-header-cell{background:var(--bg-secondary);padding:6px 0;text-align:center;font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-tertiary);min-width:0}
+    .cal-cell{background:var(--bg-primary);min-height:90px;padding:6px;display:flex;flex-direction:column;gap:3px;vertical-align:top;min-width:0;overflow:hidden}
     .cal-cell.other-month{background:var(--bg-secondary)}
     .cal-cell.today .cal-day-num{background:var(--accent);color:white;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
     .cal-day-num{font-size:12px;font-weight:500;color:var(--text-secondary);width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -1622,6 +1622,23 @@ function closeDetail(){
   renderList();
 }
 
+function openCalDetail(id){
+  const t=tasks.find(t=>t.id===id);
+  if(!t)return;
+  openId=id; // keeps stage buttons / updates working
+  const body=document.getElementById('calDetailBody');
+  if(body)body.innerHTML=taskExpandHtml(t);
+  document.getElementById('calDetailModal').style.display='flex';
+  loadPhotos(id);
+}
+
+function closeCalDetail(){
+  openId=null;
+  document.getElementById('calDetailModal').style.display='none';
+  // Refresh calendar so any edits (stage, %, etc.) are reflected
+  renderCalendar();
+}
+
 async function bumpToInProgress(id){
   const t=tasks.find(x=>x.id===id);
   if(!t||['inprogress','review','complete'].includes(t.stage))return;
@@ -2621,7 +2638,7 @@ function parseForcast(json){
     if(!days[date])days[date]={date,slots:[]};
     days[date].slots.push(slot);
   });
-  return Object.values(days).slice(0,5).map(d=>{
+  return Object.values(days).map(d=>{
     const slots=d.slots;
     const maxPop=Math.max(...slots.map(s=>s.pop||0));
     const minTemp=Math.min(...slots.map(s=>s.main?.temp_min??s.main?.temp??99));
@@ -2862,6 +2879,48 @@ document.addEventListener('click',e=>{
 // ── CALENDAR VIEW ──
 let calYear=new Date().getFullYear(), calMonth=new Date().getMonth();
 
+// Short-name cache: taskId → {short, name} — persisted in localStorage
+// 'name' is stored so we can detect if the task name has changed and re-fetch
+const CAL_NAMES_KEY='tt_cal_names';
+let calShortNames=JSON.parse(localStorage.getItem(CAL_NAMES_KEY)||'{}');
+
+async function fetchShortNames(taskList){
+  // Skip if already cached with the same task name
+  const uncached=taskList.filter(t=>{
+    const entry=calShortNames[t.id];
+    return !entry||entry.name!==t.name;
+  });
+  if(!uncached.length)return;
+  try{
+    const res=await fetch(`${SUPABASE_URL}/functions/v1/shorten-tasks`,{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':`Bearer ${SUPABASE_KEY}`
+      },
+      body:JSON.stringify(uncached.map(t=>({id:t.id,name:t.name})))
+    });
+    if(!res.ok)return;
+    const data=await res.json();
+    if(Array.isArray(data)){
+      data.forEach(r=>{
+        if(r.id&&r.short){
+          const orig=uncached.find(t=>t.id===r.id);
+          calShortNames[r.id]={short:r.short,name:orig?.name||r.short};
+        }
+      });
+      localStorage.setItem(CAL_NAMES_KEY,JSON.stringify(calShortNames));
+      renderCalendar(); // re-render now that names are ready
+    }
+  } catch(e){console.warn('shorten-tasks:',e);}
+}
+
+function calShortName(t){
+  const entry=calShortNames[t.id];
+  // Use cached short name only if the task name hasn't changed
+  return(entry&&entry.name===t.name)?entry.short:t.name;
+}
+
 // Lineage → color mapping for chips
 const LINEAGE_COLORS={
   'Land & Forest':    {bg:'#D1FAE5',fg:'#065F46'},
@@ -2900,6 +2959,7 @@ function chipColors(lineage){
 
 function switchView(v){
   currentView=v;
+  localStorage.setItem('tt_view',v);
   const listEl=document.getElementById('listView');
   const calEl=document.getElementById('calendarView');
   const btnList=document.getElementById('viewBtnList');
@@ -2936,6 +2996,8 @@ function renderCalendar(){
   const label=document.getElementById('calMonthLabel');
   const grid=document.getElementById('calGrid');
   if(!label||!grid)return;
+  // Kick off AI name shortening for any uncached tasks (non-blocking)
+  fetchShortNames(visibleTasks());
 
   const monthName=new Date(calYear,calMonth,1).toLocaleDateString('en-CA',{month:'long',year:'numeric'});
   label.textContent=monthName;
@@ -2984,13 +3046,20 @@ function renderCalendar(){
       const od=t.stage!=='complete'&&t.dueDate&&t.dueDate.slice(0,10)<todayStr;
       const bgColor=od?'#FEE2E2':c.bg;
       const fgColor=od?'#991B1B':c.fg;
-      return`<div class="cal-task-chip" style="background:${bgColor};color:${fgColor}" onclick="openDetail('${t.id}')" title="${escHtml(t.name)}">${escHtml(t.name)}</div>`;
+      return`<div class="cal-task-chip" style="background:${bgColor};color:${fgColor}" onclick="openCalDetail('${t.id}')" title="${escHtml(t.name)}">${escHtml(calShortName(t))}</div>`;
     }).join('');
 
     const overflowHtml=overflow>0?`<div class="cal-overflow">+${overflow} more</div>`:'';
 
+    // Weather icon for this day (only future days within forecast range)
+    const wxDay=weatherForecast?(weatherForecast.find(w=>w.date===ds)||(ds===todayStr?weatherForecast[0]:null)):null;
+    const daysAhead=(new Date(ds+'T12:00:00')-new Date(todayStr+'T12:00:00'))/(86400000);
+    const wxHtml=wxDay&&ds>=todayStr&&daysAhead<=14
+      ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(', '):wxDay.desc}" style="font-size:13px;line-height:1;cursor:default;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();toggleWeatherPanel()">${weatherIcon(wxDay)}</span>`
+      :'';
+
     html+=`<div class="cal-cell${isToday?' today':''}">
-      <div class="cal-day-num">${d}</div>
+      <div style="display:flex;align-items:center;gap:2px">${wxHtml?`<div class="cal-day-num">${d}</div>${wxHtml}`:`<div class="cal-day-num">${d}</div>`}</div>
       ${chips}${overflowHtml}
     </div>`;
   }
@@ -3080,10 +3149,10 @@ function updatePushBtn(enabled){
 function setupRealtime(){
   sb.channel('db-changes')
     .on('postgres_changes',{event:'*',schema:'public',table:'tasks'},async()=>{
-      await loadData();if(openId)openDetail(openId);
+      await loadData();if(openId){if(currentView==='calendar')openCalDetail(openId);else openDetail(openId);}
     })
     .on('postgres_changes',{event:'*',schema:'public',table:'task_updates'},async()=>{
-      await loadData();if(openId)openDetail(openId);
+      await loadData();if(openId){if(currentView==='calendar')openCalDetail(openId);else openDetail(openId);}
     })
     .subscribe();
 }
@@ -3295,6 +3364,8 @@ function toggleTheme(){
 }
 // Apply on load
 applyTheme(localStorage.getItem('tt_theme'));
+const _savedView=localStorage.getItem('tt_view');
+if(_savedView==='calendar')switchView('calendar');
 
 // ── INIT ──
 initAuth();
@@ -3332,6 +3403,14 @@ initAuth();
     <div style="display:flex;justify-content:flex-end">
       <button class="btn-secondary" onclick="closeContractorModal()">Done</button>
     </div>
+  </div>
+</div>
+
+<!-- CALENDAR TASK DETAIL MODAL -->
+<div id="calDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto" onclick="if(event.target===this)closeCalDetail()">
+  <div style="background:var(--bg-primary);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);width:100%;max-width:640px;position:relative">
+    <button onclick="closeCalDetail()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);line-height:1;z-index:1">✕</button>
+    <div id="calDetailBody" style="padding:0"></div>
   </div>
 </div>
 
