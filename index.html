@@ -1533,12 +1533,12 @@ function taskExpandHtml(t){
   const authorName=currentProfile?.name||currentUser?.email||'';
 
   return`
-    <div class="expand-header">
-      <div>
-        <div class="expand-title">${escHtml(t.name)}</div>
+    <div class="expand-header" style="flex-wrap:wrap;gap:8px">
+      <div style="min-width:0;flex:1 1 180px">
+        <div class="expand-title" style="word-break:break-word">${escHtml(t.name)}</div>
         <div class="expand-sub">${[t.creatorName,t.lineage,t.project].filter(Boolean).map(escHtml).join(' · ')}</div>
       </div>
-      <div class="expand-actions">
+      <div class="expand-actions" style="flex-shrink:0">
         <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update">🎤</button>
         ${isManager&&viewMode==='active'?`<button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="openModal(true)">Edit</button>`:''}
         ${isManager&&viewMode==='active'?`<button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="archiveTask()">Archive</button>`:''}
@@ -2166,6 +2166,8 @@ async function deleteUpdate(uid){
 
 async function archiveTask(){
   if(!openId)return;
+  const t=tasks.find(t=>t.id===openId);
+  if(!confirm(`Archive "${t?.name||'this task'}"?`))return;
   const{error}=await sb.from('tasks').update({archived:true}).eq('id',openId);
   if(error){console.error('archiveTask:',error);return;}
   await logUpdate(openId,'Task archived');
