@@ -1384,7 +1384,7 @@ function renderList(){
     const metaParts=[t.lineage?escHtml(t.lineage):'',pm.label+(extra?extra:'')].filter(Boolean).join(' · ');
     const recurBadge=t.recurrenceType?'🔁 ':'';
     const wxRisk=taskWeatherRisk(t);
-    const wxBadge=wxRisk?`<span title="Weather risk: ${wxRisk.alerts.join(', ')}" style="font-size:13px;cursor:default" onclick="event.stopPropagation();toggleWeatherPanel()">${weatherIcon(wxRisk)}</span>`:'';
+    const wxBadge=wxRisk?`<span title="${wxRisk.alerts.join(' · ')}" style="font-size:13px;cursor:default" onclick="event.stopPropagation();toggleWeatherPanel()">${wmoIcon(wxRisk.code).icon}</span>`:'';
     return`<div class="email-item">
       <div class="email-row${sel?' selected':''}${isOpen?' open':''}" onclick="toggleExpand('${t.id}')">
         <div class="er-check" onclick="event.stopPropagation()">
@@ -2599,36 +2599,57 @@ function toggleMobSidebar(){document.getElementById('sidebar').classList.contain
 
 
 // ── WEATHER ──
-const WEATHER_KEY='5a0a37b0749146a1d4a7b7db2472c0b7';
 const WEATHER_LAT=43.9196,WEATHER_LON=-80.0940;
-const WEATHER_CACHE_KEY='tt_weather_cache',WEATHER_TS_KEY='tt_weather_ts';
-const WEATHER_TTL=3*60*60*1000; // 3 hours
+const WX_CACHE_KEY='tt_wx_gem';
+const WEATHER_TTL=2*60*60*1000; // 2 hours (GEM runs 4x/day)
 const OUTDOOR_ALWAYS=new Set(['Land & Forest','Farm & Garden','Site Infrastructure']);
 const OUTDOOR_CONDITIONAL=new Set(['Building Improvements','Other Building']);
 
-let weatherForecast=null; // array of daily summaries
+let weatherForecast=null; // array of 14 daily summaries
 let weatherBannerDismissed=false;
 
+// WMO weather code → emoji icon + short label
+function wmoIcon(code){
+  if(code===0)         return{icon:'☀️',label:'Clear'};
+  if(code===1)         return{icon:'🌤',label:'Mostly clear'};
+  if(code===2)         return{icon:'⛅',label:'Partly cloudy'};
+  if(code===3)         return{icon:'☁️',label:'Overcast'};
+  if(code<=48)         return{icon:'🌫',label:'Fog'};
+  if(code<=55)         return{icon:'🌦',label:'Drizzle'};
+  if(code<=57)         return{icon:'🌨',label:'Freezing drizzle'};
+  if(code<=65)         return{icon:'🌧',label:'Rain'};
+  if(code<=67)         return{icon:'🌨',label:'Freezing rain'};
+  if(code<=77)         return{icon:'❄️',label:'Snow'};
+  if(code<=82)         return{icon:'🌦',label:'Rain showers'};
+  if(code<=86)         return{icon:'🌨',label:'Snow showers'};
+  if(code===95)        return{icon:'⛈',label:'Thunderstorm'};
+  if(code>=96)         return{icon:'⛈',label:'Hail storm'};
+  return{icon:'🌡',label:'Unknown'};
+}
+
 async function fetchWeather(){
-  const cached=localStorage.getItem(WEATHER_CACHE_KEY);
-  const ts=parseInt(localStorage.getItem(WEATHER_TS_KEY)||'0');
-  if(cached&&Date.now()-ts<WEATHER_TTL){
-    const parsed=JSON.parse(cached);
-    // invalidate cache if it's missing new fields (avgWind added in v2)
-    if(parsed[0]&&parsed[0].avgWind!==undefined){
-      weatherForecast=parsed;
-      updateWeatherBtn();
-      return;
-    }
+  const cachedRaw=localStorage.getItem(WX_CACHE_KEY);
+  if(cachedRaw){
+    try{
+      const cached=JSON.parse(cachedRaw);
+      if(cached.fetched&&Date.now()-cached.fetched<WEATHER_TTL&&cached.forecast?.length){
+        weatherForecast=cached.forecast;
+        updateWeatherBtn();
+        return;
+      }
+    }catch(e){}
   }
   try{
-    const url=`https://api.openweathermap.org/data/2.5/forecast?lat=${WEATHER_LAT}&lon=${WEATHER_LON}&units=metric&appid=${WEATHER_KEY}`;
+    const url='https://gem-api.open-meteo.com/v1/gem'
+      +'?latitude='+WEATHER_LAT+'&longitude='+WEATHER_LON
+      +'&hourly=temperature_2m,precipitation,snowfall,windspeed_10m,weathercode'
+      +'&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,weathercode,sunrise,sunset'
+      +'&timezone=America%2FToronto&forecast_days=14';
     const res=await fetch(url);
     if(!res.ok)throw new Error('HTTP '+res.status);
     const json=await res.json();
-    weatherForecast=parseForcast(json);
-    localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify(weatherForecast));
-    localStorage.setItem(WEATHER_TS_KEY,Date.now().toString());
+    weatherForecast=parseWeather(json);
+    localStorage.setItem(WX_CACHE_KEY,JSON.stringify({fetched:Date.now(),forecast:weatherForecast}));
     updateWeatherBtn();
   }catch(e){
     console.warn('Weather fetch failed:',e);
@@ -2637,56 +2658,61 @@ async function fetchWeather(){
   }
 }
 
-function parseForcast(json){
-  // Group 3-hour slots by date, produce one summary per day
-  const days={};
-  (json.list||[]).forEach(slot=>{
-    const date=slot.dt_txt.split(' ')[0];
-    if(!days[date])days[date]={date,slots:[]};
-    days[date].slots.push(slot);
-  });
-  return Object.values(days).map(d=>{
-    const slots=d.slots;
-    const maxPop=Math.max(...slots.map(s=>s.pop||0));
-    const minTemp=Math.min(...slots.map(s=>s.main?.temp_min??s.main?.temp??99));
-    const maxTemp=Math.max(...slots.map(s=>s.main?.temp_max??s.main?.temp??-99));
-    const hasSnow=slots.some(s=>s.snow&&(s.snow['3h']||0)>0||s.weather?.[0]?.main==='Snow');
-    const hasRain=slots.some(s=>s.rain&&(s.rain['3h']||0)>0||s.weather?.[0]?.main==='Rain'||s.weather?.[0]?.main==='Drizzle'||s.weather?.[0]?.main==='Thunderstorm');
-    const avgWind=slots.reduce((a,s)=>a+(s.wind?.speed||0),0)/slots.length;
-    const maxWind=Math.max(...slots.map(s=>s.wind?.speed||0));
-    const avgHumidity=Math.round(slots.reduce((a,s)=>a+(s.main?.humidity||0),0)/slots.length);
-    const totalRainMm=slots.reduce((a,s)=>a+(s.rain?.['3h']||0),0);
-    const totalSnowMm=slots.reduce((a,s)=>a+(s.snow?.['3h']||0),0);
-    // pick the most representative icon (midday slot preferred)
-    const midday=slots.find(s=>s.dt_txt.includes('12:00'))||slots[Math.floor(slots.length/2)];
-    const icon=midday?.weather?.[0]?.icon||'01d';
-    const desc=midday?.weather?.[0]?.description||'';
-    const bad=(maxPop>0.6)||(minTemp<2)||hasSnow;
+function parseWeather(json){
+  const{hourly,daily}=json;
+  if(!daily||!hourly)return[];
+  const days=[];
+  for(let d=0;d<daily.time.length;d++){
+    const date=daily.time[d];
+    const hBase=d*24;
+    const idxs=(from,to)=>Array.from({length:to-from},(_,i)=>hBase+from+i);
+    const avgTemp=ii=>ii.reduce((s,i)=>s+(hourly.temperature_2m[i]||0),0)/ii.length;
+    const sumP=ii=>ii.reduce((s,i)=>s+(hourly.precipitation[i]||0),0);
+    const sumSn=ii=>ii.reduce((s,i)=>s+(hourly.snowfall[i]||0),0);
+    const maxW=ii=>Math.max(0,...ii.map(i=>hourly.windspeed_10m[i]||0));
+    const worstC=ii=>Math.max(0,...ii.map(i=>hourly.weathercode[i]||0));
+    const periodIdxs={
+      morning:  idxs(6,12),
+      afternoon:idxs(12,18),
+      evening:  idxs(18,22),
+      night:    [...idxs(0,6),...idxs(22,24)]
+    };
+    const periods={};
+    for(const[name,ii]of Object.entries(periodIdxs)){
+      periods[name]={
+        temp:  Math.round(avgTemp(ii)),
+        precip:Math.round(sumP(ii)*10)/10,
+        snow:  Math.round(sumSn(ii)*10)/10,
+        wind:  Math.round(maxW(ii)),
+        code:  worstC(ii)
+      };
+    }
+    const precipSum=daily.precipitation_sum[d]||0;
+    const minTemp=daily.temperature_2m_min[d]||0;
+    const maxWind=daily.windspeed_10m_max[d]||0;
+    const code=daily.weathercode[d]||0;
+    const daySnow=periods.morning.snow+periods.afternoon.snow;
     const alerts=[];
-    if(maxPop>0.6)alerts.push(`⚠ ${Math.round(maxPop*100)}% chance of rain`);
-    if(minTemp<2)alerts.push(`⚠ Frost risk (low ${Math.round(minTemp)}°C)`);
-    if(hasSnow)alerts.push(`⚠ Snow expected`);
-    return{date:d.date,icon,desc,maxPop,minTemp,maxTemp,hasSnow,hasRain,bad,alerts,avgWind,maxWind,avgHumidity,totalRainMm,totalSnowMm};
-  });
-}
-
-function weatherIcon(day){
-  if(!day)return'—';
-  if(day.hasSnow)return'🌨';
-  if(day.bad&&day.maxPop>0.6)return'🌧';
-  if(day.maxPop>0.3||day.hasRain)return'🌦';
-  if(day.minTemp<2)return'🥶';
-  // use OpenWeather icon code to pick emoji
-  const ic=day.icon||'';
-  if(ic.startsWith('01'))return'☀️';
-  if(ic.startsWith('02'))return'🌤';
-  if(ic.startsWith('03')||ic.startsWith('04'))return'☁️';
-  if(ic.startsWith('09'))return'🌧';
-  if(ic.startsWith('10'))return'🌦';
-  if(ic.startsWith('11'))return'⛈';
-  if(ic.startsWith('13'))return'🌨';
-  if(ic.startsWith('50'))return'🌫';
-  return'🌡';
+    if(precipSum>3)  alerts.push(`🌧 Rain ${precipSum.toFixed(1)}mm`);
+    if(daySnow>0.5)  alerts.push(`❄️ Snow ${daySnow.toFixed(1)}cm`);
+    if(minTemp<2)    alerts.push(`🌡 Frost (low ${Math.round(minTemp)}°C)`);
+    if(maxWind>50)   alerts.push(`💨 Wind ${Math.round(maxWind)}km/h`);
+    if(code>=95)     alerts.push(`⛈ Storm`);
+    days.push({
+      date,
+      maxTemp:Math.round(daily.temperature_2m_max[d]||0),
+      minTemp:Math.round(minTemp),
+      precipSum:Math.round(precipSum*10)/10,
+      maxWind:Math.round(maxWind),
+      code,
+      sunrise:daily.sunrise[d],
+      sunset:daily.sunset[d],
+      periods,
+      bad:alerts.length>0,
+      alerts
+    });
+  }
+  return days;
 }
 
 function fmtWeatherDate(dateStr){
@@ -2703,9 +2729,8 @@ function fmtWeatherDate(dateStr){
 function updateWeatherBtn(){
   const btn=document.getElementById('weatherBtn');
   if(!btn)return;
-  if(!weatherForecast){btn.textContent='🌡';return;}
-  const today=weatherForecast[0];
-  btn.textContent=weatherIcon(today);
+  if(!weatherForecast||!weatherForecast.length){btn.textContent='🌡';return;}
+  btn.textContent=wmoIcon(weatherForecast[0].code).icon;
 }
 
 function toggleWeatherPanel(){
@@ -2726,39 +2751,53 @@ document.addEventListener('click',e=>{
   }
 });
 
+let wxExpandedDay=null;
 function renderWeatherPanel(){
   const errEl=document.getElementById('wpError');
   const daysEl=document.getElementById('wpDays');
   const updEl=document.getElementById('wpUpdated');
-  if(!weatherForecast){
+  if(!weatherForecast||!weatherForecast.length){
     if(errEl)errEl.style.display='block';
     if(daysEl)daysEl.innerHTML='';
     return;
   }
   if(errEl)errEl.style.display='none';
-  const ts=parseInt(localStorage.getItem(WEATHER_TS_KEY)||'0');
-  const mins=Math.round((Date.now()-ts)/60000);
+  const cached=JSON.parse(localStorage.getItem(WX_CACHE_KEY)||'{}');
+  const mins=cached.fetched?Math.round((Date.now()-cached.fetched)/60000):0;
   if(updEl)updEl.textContent=mins<2?'Just updated':`Updated ${mins}m ago`;
+  const PERIOD_NAMES=['morning','afternoon','evening','night'];
+  const PERIOD_LABELS={morning:'Morning',afternoon:'Afternoon',evening:'Evening',night:'Night'};
   daysEl.innerHTML=weatherForecast.map((day,i)=>{
-    const ic=weatherIcon(day);
+    const{icon,label}=wmoIcon(day.code);
     const badStyle=day.bad?'border-left:3px solid #EF9F27;':'border-left:3px solid transparent;';
-    const pop=Math.round(day.maxPop*100);
-    const popColor=pop>=60?'#E24B4A':pop>=30?'#EF9F27':'var(--text-tertiary)';
-    const details=[];
-    if(pop>0)details.push(`${pop}% precip`);
-    if(day.totalRainMm>0)details.push(`${day.totalRainMm.toFixed(1)}mm rain`);
-    if(day.totalSnowMm>0)details.push(`${day.totalSnowMm.toFixed(1)}mm snow`);
-    details.push(`${Math.round(day.maxWind)}km/h wind`);
-    details.push(`${day.avgHumidity}% humidity`);
-    const alertStr=day.alerts.length?` · <span style="color:#854F0B">${day.alerts.map(a=>a.replace('⚠ ','')).join(' · ')}</span>`:'';
-    return`<div style="${badStyle}display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:0.5px solid var(--border-md)">
-      <div style="font-size:20px;width:28px;text-align:center;flex-shrink:0">${ic}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:${i===0?'500':'400'}">${fmtWeatherDate(day.date)} · ${Math.round(day.maxTemp)}° / ${Math.round(day.minTemp)}°</div>
-        <div style="font-size:11px;color:var(--text-tertiary);text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${details.join(' · ')}${alertStr}</div>
+    const alertStr=day.alerts.length?` · <span style="color:#854F0B">${day.alerts.join(' · ')}</span>`:'';
+    const isExpanded=wxExpandedDay===day.date;
+    const periodsHtml=isExpanded?`<div style="padding:6px 14px 8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;background:var(--bg-secondary);border-bottom:0.5px solid var(--border-md)">${
+      PERIOD_NAMES.map(p=>{
+        const pd=day.periods[p];
+        const{icon:pic}=wmoIcon(pd.code);
+        const detail=pd.precip>0?` · ${pd.precip}mm`:(pd.snow>0?` · ${pd.snow}cm❄️`:'');
+        const wind=pd.wind>30?` · ${pd.wind}km/h`:'';
+        return`<div style="font-size:11px;color:var(--text-secondary)"><span style="font-weight:500">${PERIOD_LABELS[p]}</span> ${pic} ${pd.temp}°${detail}${wind}</div>`;
+      }).join('')
+    }</div>`:'';
+    return`<div>
+      <div onclick="wxTogglePeriod('${day.date}')" style="${badStyle}display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:0.5px solid var(--border-md);cursor:pointer" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''">
+        <div style="font-size:20px;width:28px;text-align:center;flex-shrink:0">${icon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:${i===0?'500':'400'}">${fmtWeatherDate(day.date)} · ${day.maxTemp}° / ${day.minTemp}°</div>
+          <div style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}${alertStr}</div>
+        </div>
+        <span style="font-size:10px;color:var(--text-tertiary)">${isExpanded?'▲':'▼'}</span>
       </div>
+      ${periodsHtml}
     </div>`;
   }).join('');
+}
+
+function wxTogglePeriod(date){
+  wxExpandedDay=wxExpandedDay===date?null:date;
+  renderWeatherPanel();
 }
 
 // Returns the forecast day summary for a given date string (YYYY-MM-DD), or null
@@ -2770,8 +2809,6 @@ function getForecastForDate(dateStr){
 // Is a task weather-at-risk on its start or due date?
 function taskWeatherRisk(t){
   if(!weatherForecast)return null;
-  const OUTDOOR_ALWAYS=new Set(['Land & Forest','Farm & Garden','Site Infrastructure']);
-  const OUTDOOR_CONDITIONAL=new Set(['Building Improvements','Other Building']);
   const isOutdoor=OUTDOOR_ALWAYS.has(t.lineage)||(OUTDOOR_CONDITIONAL.has(t.lineage)&&t.weatherDependent==='yes');
   if(!isOutdoor)return null;
   const checkDates=[t.startDate,t.dueDate].filter(Boolean);
@@ -2782,6 +2819,13 @@ function taskWeatherRisk(t){
   return null;
 }
 
+function taskWeatherRiskReason(t){
+  const fc=taskWeatherRisk(t);
+  if(!fc)return'';
+  return fc.alerts[0]||'⚠️ Weather';
+}
+
+let weatherBannerTaskIndex=0;
 function renderWeatherBanner(){
   const el=document.getElementById('weatherBannerInline');
   if(!el)return;
@@ -2789,12 +2833,24 @@ function renderWeatherBanner(){
   const atRisk=filteredTasks().filter(t=>taskWeatherRisk(t));
   if(!atRisk.length){el.innerHTML='';return;}
   const lineages=[...new Set(atRisk.map(t=>t.lineage).filter(Boolean))];
-  const msg=`${atRisk.length} task${atRisk.length>1?'s':''} may be affected by weather this week${lineages.length?` (${lineages.join(', ')})`:''}.`;
-  el.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin:8px 0 4px;padding:9px 12px;background:#FAEEDA;border:0.5px solid #EF9F27;border-radius:var(--border-radius-md);font-size:13px;color:#633806">
+  const multi=atRisk.length>1;
+  const msg=atRisk.length===1
+    ?`<strong>${escHtml(atRisk[0].name)}</strong> may be affected by weather`
+    :`${atRisk.length} tasks may be affected by weather${lineages.length?` (${lineages.join(', ')})`:''}.`;
+  const hint=multi?`<span style="font-size:11px;opacity:0.7;margin-left:4px">Tap to view →</span>`:'';
+  el.innerHTML=`<div onclick="weatherBannerClick()" style="display:flex;align-items:center;gap:10px;margin:8px 0 4px;padding:9px 12px;background:#FAEEDA;border:0.5px solid #EF9F27;border-radius:var(--radius-md);font-size:13px;color:#633806;cursor:pointer" onmouseover="this.style.background='#f5e2c4'" onmouseout="this.style.background='#FAEEDA'">
     <span style="font-size:15px">⛅</span>
-    <span style="flex:1">${msg}</span>
-    <button onclick="dismissWeatherBanner()" style="background:none;border:none;cursor:pointer;font-size:14px;color:#854F0B;padding:2px 4px">✕</button>
+    <span style="flex:1">${msg}${hint}</span>
+    <button onclick="event.stopPropagation();dismissWeatherBanner()" style="background:none;border:none;cursor:pointer;font-size:14px;color:#854F0B;padding:2px 4px">✕</button>
   </div>`;
+}
+function weatherBannerClick(){
+  const atRisk=filteredTasks().filter(t=>taskWeatherRisk(t));
+  if(!atRisk.length)return;
+  weatherBannerTaskIndex=weatherBannerTaskIndex%atRisk.length;
+  const t=atRisk[weatherBannerTaskIndex];
+  weatherBannerTaskIndex++;
+  openDetail(t.id);
 }
 function dismissWeatherBanner(){
   weatherBannerDismissed=true;
@@ -3062,7 +3118,7 @@ function renderCalendar(){
     const wxDay=weatherForecast?(weatherForecast.find(w=>w.date===ds)||(ds===todayStr?weatherForecast[0]:null)):null;
     const daysAhead=(new Date(ds+'T12:00:00')-new Date(todayStr+'T12:00:00'))/(86400000);
     const wxHtml=wxDay&&ds>=todayStr&&daysAhead<=14
-      ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(', '):wxDay.desc}" style="font-size:13px;line-height:1;cursor:default;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();toggleWeatherPanel()">${weatherIcon(wxDay)}</span>`
+      ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(' · '):wmoIcon(wxDay.code).label}" style="font-size:13px;line-height:1;cursor:default;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();toggleWeatherPanel()">${wmoIcon(wxDay.code).icon}</span>`
       :'';
 
     html+=`<div class="cal-cell${isToday?' today':''}">
