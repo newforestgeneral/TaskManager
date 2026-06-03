@@ -2632,8 +2632,10 @@ async function fetchWeather(){
   if(cachedRaw){
     try{
       const cached=JSON.parse(cachedRaw);
-      if(cached.fetched&&Date.now()-cached.fetched<WEATHER_TTL&&cached.forecast?.length){
-        weatherForecast=cached.forecast;
+      // v2: reject cache entries that have null-temp days (old bug)
+      const valid=cached.forecast?.filter(d=>d.maxTemp!==0||d.minTemp!==0);
+      if(cached.fetched&&Date.now()-cached.fetched<WEATHER_TTL&&valid?.length){
+        weatherForecast=valid;
         updateWeatherBtn();
         return;
       }
@@ -2688,8 +2690,10 @@ function parseWeather(json){
         code:  worstC(ii)
       };
     }
+    // Skip days with null data (beyond model's forecast horizon)
+    if(daily.temperature_2m_max[d]===null||daily.temperature_2m_min[d]===null)continue;
     const precipSum=daily.precipitation_sum[d]||0;
-    const minTemp=daily.temperature_2m_min[d]||0;
+    const minTemp=daily.temperature_2m_min[d];
     const maxWind=daily.windspeed_10m_max[d]||0;
     const code=daily.weathercode[d]||0;
     const daySnow=periods.morning.snow+periods.afternoon.snow;
