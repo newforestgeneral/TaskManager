@@ -2573,11 +2573,14 @@ function updateBadges(){
 }
 
 function updateAssigneeSelect(){
-  const allA=[...new Set(tasks.flatMap(t=>t.assignees))].sort();
   const sel=document.getElementById('fsAssignee');if(!sel)return;
   const cur=filter.assignee;
+  // Use allProfiles so every person appears regardless of current task assignments
+  const names=allProfiles.length
+    ?allProfiles.map(p=>p.name).sort()
+    :[...new Set(tasks.flatMap(t=>t.assignees))].sort();
   sel.innerHTML='<option value="all">All assignees</option>'+
-    allA.map(a=>`<option value="${escHtml(a)}"${cur===a?' selected':''}>${escHtml(a)}</option>`).join('');
+    names.map(a=>`<option value="${escHtml(a)}"${cur===a?' selected':''}>${escHtml(a)}</option>`).join('');
   sel.value=cur;
 }
 
@@ -3043,7 +3046,6 @@ function switchView(v){
     if(btnCal){btnCal.style.background='var(--bg-primary)';btnCal.style.color='var(--text-primary)';}
     if(mobBtnList){mobBtnList.style.background='transparent';mobBtnList.style.color='var(--text-secondary)';}
     if(mobBtnCal){mobBtnCal.style.background='var(--bg-primary)';mobBtnCal.style.color='var(--text-primary)';}
-    if(filterBtn)filterBtn.style.display='none';
     renderCalendar();
   } else {
     if(listEl)listEl.style.display='';
@@ -3052,7 +3054,6 @@ function switchView(v){
     if(btnCal){btnCal.style.background='transparent';btnCal.style.color='var(--text-secondary)';}
     if(mobBtnList){mobBtnList.style.background='var(--bg-primary)';mobBtnList.style.color='var(--text-primary)';}
     if(mobBtnCal){mobBtnCal.style.background='transparent';mobBtnCal.style.color='var(--text-secondary)';}
-    if(filterBtn)filterBtn.style.display='';
     renderList();
   }
 }
@@ -3065,7 +3066,7 @@ function renderCalendar(){
   const grid=document.getElementById('calGrid');
   if(!label||!grid)return;
   // Kick off AI name shortening for any uncached tasks (non-blocking)
-  fetchShortNames(visibleTasks());
+  fetchShortNames(filteredTasks());
 
   const monthName=new Date(calYear,calMonth,1).toLocaleDateString('en-CA',{month:'long',year:'numeric'});
   label.textContent=monthName;
@@ -3075,7 +3076,7 @@ function renderCalendar(){
 
   // Build a map: dateStr → tasks (use dueDate; fall back to startDate)
   const tasksByDate={};
-  const allT=visibleTasks();
+  const allT=filteredTasks();
   allT.forEach(t=>{
     const d=t.dueDate||t.startDate;
     if(!d)return;
