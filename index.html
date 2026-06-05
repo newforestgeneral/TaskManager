@@ -67,7 +67,7 @@
       text-align:left;box-sizing:border-box;transition:background 0.1s}
     .sf-btn:hover,.sf-btn.open{background:var(--bg-tertiary)}
     .sf-btn.filtered{border-color:var(--accent)}
-    .sf-icon{flex-shrink:0;font-size:14px;line-height:1}
+    .sf-icon{flex-shrink:0;font-size:14px;line-height:1;width:18px;text-align:center}
     .sf-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
     .sf-count{font-size:11px;color:var(--text-tertiary);background:var(--bg-primary);
       padding:1px 6px;border-radius:8px;border:0.5px solid var(--border-md);flex-shrink:0}
@@ -114,7 +114,7 @@
 
     .topbar{background:var(--bg-primary);border-bottom:0.5px solid var(--border);
       height:52px;padding:0 20px;display:flex;align-items:center;gap:10px;flex-shrink:0}
-    .topbar-title{font-size:16px;font-weight:600;flex:1}
+    .topbar-title{font-size:16px;font-weight:600}
     .btn-primary{background:var(--accent);color:white;border:none;padding:7px 14px;
       border-radius:var(--radius-md);font-size:13px;font-weight:500;cursor:pointer;
       display:flex;align-items:center;gap:6px;transition:background 0.12s;
@@ -209,6 +209,7 @@
       letter-spacing:0.05em;background:var(--bg-primary);border-bottom:0.5px solid var(--border);
       position:sticky;top:0;z-index:10}
     .list-date-header.past-due .ldh-label{color:var(--danger)}
+    .list-date-header.hoverable:hover{background:var(--bg-secondary)}
     .ldh-label{flex:1}
     .ldh-count{background:var(--bg-tertiary);color:var(--text-tertiary);
       font-size:10px;padding:1px 6px;border-radius:8px;border:0.5px solid var(--border-md)}
@@ -347,7 +348,7 @@
       padding:5px 10px 5px 30px;font-size:12px;font-family:inherit;background:var(--bg-primary);
       color:var(--text-primary);width:220px;transition:border-color 0.12s}
     .search-input:focus{outline:none;border-color:var(--accent)}
-    .search-wrap{position:relative;display:flex;align-items:center}
+    .search-wrap{position:relative;display:flex;align-items:center;flex:1;max-width:360px}
     .search-icon{position:absolute;left:9px;font-size:13px;color:var(--text-tertiary);pointer-events:none;line-height:1}
     .progress-range{width:100%;accent-color:var(--accent);cursor:pointer}
     .pct-label{font-size:12px;font-weight:500;min-width:34px;text-align:right}
@@ -661,6 +662,70 @@
   <div class="sidebar-scroll">
     <div class="sidebar-section">
       <div class="sidebar-section-label">Filters</div>
+      <!-- Users (assignee) dropdown — populated dynamically -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-assignee" onclick="toggleSfDropdown('assignee')">
+          <span class="sf-icon" style="color:var(--text-tertiary)">👤</span>
+          <span class="sf-label" id="sfLabel-assignee">All users</span>
+          <span class="sf-count" id="sfCount-assignee">0</span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-assignee">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('assignee','all')"><span style="color:var(--text-tertiary)">●</span> All users</div>
+        </div>
+      </div>
+      <!-- Lineage dropdown -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-lineage" onclick="toggleSfDropdown('lineage')">
+          <span class="sf-icon" id="sfIcon-lineage" style="color:var(--text-tertiary)">◈</span>
+          <span class="sf-label" id="sfLabel-lineage">All lineages</span>
+          <span class="sf-count" id="sfCount-lineage">0</span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-lineage">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('lineage','all')"><span style="color:var(--text-tertiary)">◈</span> All lineages <span class="nav-badge" id="nb-l-all">0</span></div>
+          <div class="sf-row" data-val="Land & Forest" onclick="sfFilter('lineage','Land \x26 Forest')"><span style="color:var(--text-tertiary)">◈</span> Land &amp; Forest <span class="nav-badge" id="nb-l-Land">0</span></div>
+          <div class="sf-row" data-val="Farm & Garden" onclick="sfFilter('lineage','Farm \x26 Garden')"><span style="color:var(--text-tertiary)">◈</span> Farm &amp; Garden <span class="nav-badge" id="nb-l-Farm">0</span></div>
+          <div class="sf-row" data-val="Building Improvements" onclick="sfFilter('lineage','Building Improvements')"><span style="color:var(--text-tertiary)">◈</span> Building Improvements <span class="nav-badge" id="nb-l-BldImpr">0</span></div>
+          <div class="sf-row" data-val="Other Building" onclick="sfFilter('lineage','Other Building')"><span style="color:var(--text-tertiary)">◈</span> Other Building <span class="nav-badge" id="nb-l-OtherBld">0</span></div>
+          <div class="sf-row" data-val="Site Infrastructure" onclick="sfFilter('lineage','Site Infrastructure')"><span style="color:var(--text-tertiary)">◈</span> Site Infrastructure <span class="nav-badge" id="nb-l-SiteInfra">0</span></div>
+          <div class="sf-row" data-val="Housekeeping" onclick="sfFilter('lineage','Housekeeping')"><span style="color:var(--text-tertiary)">◈</span> Housekeeping <span class="nav-badge" id="nb-l-House">0</span></div>
+          <div class="sf-row" data-val="Kitchen" onclick="sfFilter('lineage','Kitchen')"><span style="color:var(--text-tertiary)">◈</span> Kitchen <span class="nav-badge" id="nb-l-Kitchen">0</span></div>
+          <div class="sf-row" data-val="Dining" onclick="sfFilter('lineage','Dining')"><span style="color:var(--text-tertiary)">◈</span> Dining <span class="nav-badge" id="nb-l-Dining">0</span></div>
+          <div class="sf-row" data-val="Administration" onclick="sfFilter('lineage','Administration')"><span style="color:var(--text-tertiary)">◈</span> Administration <span class="nav-badge" id="nb-l-Admin">0</span></div>
+        </div>
+      </div>
+      <!-- Due date dropdown -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-dueDate" onclick="toggleSfDropdown('dueDate')">
+          <span class="sf-icon" style="color:var(--text-tertiary)">📅</span>
+          <span class="sf-label" id="sfLabel-dueDate">All dates</span>
+          <span class="sf-count" id="sfCount-dueDate"></span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-dueDate">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('dueDate','all')"><span style="flex:1">All dates</span><span class="sf-count" id="nb-dd-all">0</span></div>
+          <div class="sf-row" data-val="today" onclick="sfFilter('dueDate','today')"><span style="flex:1">📌 Today</span><span class="sf-count" id="nb-dd-today">0</span></div>
+          <div class="sf-row" data-val="tomorrow" onclick="sfFilter('dueDate','tomorrow')"><span style="flex:1">📌 Tomorrow</span><span class="sf-count" id="nb-dd-tomorrow">0</span></div>
+          <div class="sf-row" data-val="this-week" onclick="sfFilter('dueDate','this-week')"><span style="flex:1">📆 This week</span><span class="sf-count" id="nb-dd-week">0</span></div>
+          <div class="sf-row" data-val="next-week" onclick="sfFilter('dueDate','next-week')"><span style="flex:1">📆 Next week</span><span class="sf-count" id="nb-dd-nweek">0</span></div>
+          <div class="sf-row" data-val="this-month" onclick="sfFilter('dueDate','this-month')"><span style="flex:1">🗓 This month</span><span class="sf-count" id="nb-dd-month">0</span></div>
+        </div>
+      </div>
+      <!-- Weather dependent dropdown -->
+      <div class="sf-wrap">
+        <button class="sf-btn" id="sfBtn-weatherDependent" onclick="toggleSfDropdown('weatherDependent')">
+          <span class="sf-icon" style="color:var(--text-tertiary)">🌤</span>
+          <span class="sf-label" id="sfLabel-weatherDependent">All weather</span>
+          <span class="sf-count" id="sfCount-weatherDependent"></span>
+          <span class="sf-chev">▾</span>
+        </button>
+        <div class="sf-menu" id="sfMenu-weatherDependent">
+          <div class="sf-row active" data-val="all" onclick="sfFilter('weatherDependent','all')"><span style="flex:1">All weather</span><span class="sf-count" id="nb-wd-all">0</span></div>
+          <div class="sf-row" data-val="yes" onclick="sfFilter('weatherDependent','yes')"><span style="flex:1">☁️ Yes — weather dependent</span><span class="sf-count" id="nb-wd-yes">0</span></div>
+          <div class="sf-row" data-val="no" onclick="sfFilter('weatherDependent','no')"><span style="flex:1">✅ No — not dependent</span><span class="sf-count" id="nb-wd-no">0</span></div>
+        </div>
+      </div>
       <!-- Stage dropdown -->
       <div class="sf-wrap">
         <button class="sf-btn" id="sfBtn-stage" onclick="toggleSfDropdown('stage')">
@@ -694,71 +759,7 @@
           <div class="sf-row" data-val="low" onclick="sfFilter('priority','low')"><span style="color:#888780">●</span> Low <span class="nav-badge" id="nb-p-low">0</span></div>
         </div>
       </div>
-      <!-- Lineage dropdown -->
-      <div class="sf-wrap">
-        <button class="sf-btn" id="sfBtn-lineage" onclick="toggleSfDropdown('lineage')">
-          <span class="sf-icon" id="sfIcon-lineage" style="color:var(--text-tertiary)">◈</span>
-          <span class="sf-label" id="sfLabel-lineage">All lineages</span>
-          <span class="sf-count" id="sfCount-lineage">0</span>
-          <span class="sf-chev">▾</span>
-        </button>
-        <div class="sf-menu" id="sfMenu-lineage">
-          <div class="sf-row active" data-val="all" onclick="sfFilter('lineage','all')"><span style="color:var(--text-tertiary)">◈</span> All lineages <span class="nav-badge" id="nb-l-all">0</span></div>
-          <div class="sf-row" data-val="Land & Forest" onclick="sfFilter('lineage','Land \x26 Forest')"><span style="color:var(--text-tertiary)">◈</span> Land &amp; Forest <span class="nav-badge" id="nb-l-Land">0</span></div>
-          <div class="sf-row" data-val="Farm & Garden" onclick="sfFilter('lineage','Farm \x26 Garden')"><span style="color:var(--text-tertiary)">◈</span> Farm &amp; Garden <span class="nav-badge" id="nb-l-Farm">0</span></div>
-          <div class="sf-row" data-val="Building Improvements" onclick="sfFilter('lineage','Building Improvements')"><span style="color:var(--text-tertiary)">◈</span> Building Improvements <span class="nav-badge" id="nb-l-BldImpr">0</span></div>
-          <div class="sf-row" data-val="Other Building" onclick="sfFilter('lineage','Other Building')"><span style="color:var(--text-tertiary)">◈</span> Other Building <span class="nav-badge" id="nb-l-OtherBld">0</span></div>
-          <div class="sf-row" data-val="Site Infrastructure" onclick="sfFilter('lineage','Site Infrastructure')"><span style="color:var(--text-tertiary)">◈</span> Site Infrastructure <span class="nav-badge" id="nb-l-SiteInfra">0</span></div>
-          <div class="sf-row" data-val="Housekeeping" onclick="sfFilter('lineage','Housekeeping')"><span style="color:var(--text-tertiary)">◈</span> Housekeeping <span class="nav-badge" id="nb-l-House">0</span></div>
-          <div class="sf-row" data-val="Kitchen" onclick="sfFilter('lineage','Kitchen')"><span style="color:var(--text-tertiary)">◈</span> Kitchen <span class="nav-badge" id="nb-l-Kitchen">0</span></div>
-          <div class="sf-row" data-val="Dining" onclick="sfFilter('lineage','Dining')"><span style="color:var(--text-tertiary)">◈</span> Dining <span class="nav-badge" id="nb-l-Dining">0</span></div>
-          <div class="sf-row" data-val="Administration" onclick="sfFilter('lineage','Administration')"><span style="color:var(--text-tertiary)">◈</span> Administration <span class="nav-badge" id="nb-l-Admin">0</span></div>
-        </div>
-      </div>
-      <!-- Users (assignee) dropdown — populated dynamically -->
-      <div class="sf-wrap">
-        <button class="sf-btn" id="sfBtn-assignee" onclick="toggleSfDropdown('assignee')">
-          <span class="sf-icon" style="color:var(--text-tertiary)">👤</span>
-          <span class="sf-label" id="sfLabel-assignee">All users</span>
-          <span class="sf-count" id="sfCount-assignee">0</span>
-          <span class="sf-chev">▾</span>
-        </button>
-        <div class="sf-menu" id="sfMenu-assignee">
-          <div class="sf-row active" data-val="all" onclick="sfFilter('assignee','all')"><span style="color:var(--text-tertiary)">●</span> All users</div>
-        </div>
-      </div>
-      <!-- Weather dependent dropdown -->
-      <div class="sf-wrap">
-        <button class="sf-btn" id="sfBtn-weatherDependent" onclick="toggleSfDropdown('weatherDependent')">
-          <span class="sf-icon" style="color:var(--text-tertiary)">🌤</span>
-          <span class="sf-label" id="sfLabel-weatherDependent">Weather dep.</span>
-          <span class="sf-count" id="sfCount-weatherDependent"></span>
-          <span class="sf-chev">▾</span>
-        </button>
-        <div class="sf-menu" id="sfMenu-weatherDependent">
-          <div class="sf-row active" data-val="all" onclick="sfFilter('weatherDependent','all')">All tasks</div>
-          <div class="sf-row" data-val="yes" onclick="sfFilter('weatherDependent','yes')">☁️ Yes — weather dependent</div>
-          <div class="sf-row" data-val="no" onclick="sfFilter('weatherDependent','no')">✅ No — not dependent</div>
-          <div class="sf-row" data-val="blank" onclick="sfFilter('weatherDependent','blank')">— Not set</div>
-        </div>
-      </div>
-      <!-- Due date dropdown -->
-      <div class="sf-wrap">
-        <button class="sf-btn" id="sfBtn-dueDate" onclick="toggleSfDropdown('dueDate')">
-          <span class="sf-icon" style="color:var(--text-tertiary)">📅</span>
-          <span class="sf-label" id="sfLabel-dueDate">All dates</span>
-          <span class="sf-count" id="sfCount-dueDate"></span>
-          <span class="sf-chev">▾</span>
-        </button>
-        <div class="sf-menu" id="sfMenu-dueDate">
-          <div class="sf-row active" data-val="all" onclick="sfFilter('dueDate','all')">All dates</div>
-          <div class="sf-row" data-val="today" onclick="sfFilter('dueDate','today')">📌 Today</div>
-          <div class="sf-row" data-val="tomorrow" onclick="sfFilter('dueDate','tomorrow')">📌 Tomorrow</div>
-          <div class="sf-row" data-val="this-week" onclick="sfFilter('dueDate','this-week')">📆 This week</div>
-          <div class="sf-row" data-val="next-week" onclick="sfFilter('dueDate','next-week')">📆 Next week</div>
-          <div class="sf-row" data-val="this-month" onclick="sfFilter('dueDate','this-month')">🗓 This month</div>
-        </div>
-      </div>
+      <button id="resetFiltersBtn" onclick="resetFilters()" style="display:none;width:100%;margin-top:6px;padding:7px 10px;border:0.5px solid var(--danger);border-radius:var(--radius-md);background:none;color:var(--danger);font-size:12px;cursor:pointer;text-align:center">✕ Reset filters</button>
     </div>
     <div class="sidebar-section manager-only">
       <div class="sidebar-section-label">Admin</div>
@@ -793,16 +794,40 @@
       <input class="search-input" id="searchInput" placeholder="Search tasks…" oninput="doSearch(this.value)" />
     </div>
     <button id="weatherBtn" onclick="toggleWeatherPanel()" title="Weather forecast" style="background:none;border:none;cursor:pointer;font-size:20px;padding:4px 6px;line-height:1;border-radius:var(--border-radius-md);color:var(--text-secondary)" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='none'">—</button>
-    <button id="globalVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
     <div style="display:flex;gap:2px;background:var(--bg-tertiary);border-radius:var(--radius-sm);padding:2px">
       <button id="viewBtnList" onclick="switchView('list')" title="List view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:var(--bg-primary);color:var(--text-primary)">☰</button>
       <button id="viewBtnCal" onclick="switchView('calendar')" title="Calendar view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:transparent;color:var(--text-secondary)">▦</button>
     </div>
-    <button class="btn-secondary" id="filterToggleBtn" onclick="toggleFilterBar()">⊟ Filter</button>
     <button class="btn-primary manager-only" onclick="openModal()">+ New task</button>
-    <div class="topbar-user" id="topbarUserWrap">
+    <button id="globalVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
+    <div class="topbar-user" id="topbarUserWrap" style="margin-left:auto">
       <button class="topbar-avatar" id="topbarAvatar" onclick="toggleUserMenu(event)">?</button>
     </div>
+  </div>
+
+  <!-- hidden selects kept for JS filter sync -->
+  <div style="display:none">
+    <select id="fsStage" onchange="dropFilter('stage',this.value)">
+      <option value="all">All stages</option>
+      <option value="created">Created</option><option value="assigned">Assigned</option>
+      <option value="inprogress">In progress</option><option value="review">Review</option>
+      <option value="complete">Complete</option>
+    </select>
+    <select id="fsPriority" onchange="dropFilter('priority',this.value)">
+      <option value="all">All priorities</option>
+      <option value="urgent">Urgent</option><option value="high">High</option>
+      <option value="medium">Medium</option><option value="low">Low</option>
+    </select>
+    <select id="fsLineage" onchange="dropFilter('lineage',this.value)">
+      <option value="all">All lineages</option>
+      <option>Land &amp; Forest</option><option>Farm &amp; Garden</option>
+      <option>Building Improvements</option><option>Other Building</option>
+      <option>Site Infrastructure</option><option>Housekeeping</option>
+      <option>Kitchen</option><option>Dining</option><option>Administration</option>
+    </select>
+    <select id="fsAssignee" onchange="dropFilter('assignee',this.value)">
+      <option value="all">All assignees</option>
+    </select>
   </div>
 
   <!-- WORKER HERO -->
@@ -814,54 +839,7 @@
     </div>
   </div>
 
-  <div class="filter-bar" id="filterBar">
-    <span class="filter-label">Stage:</span>
-    <select class="filter-select" id="fsStage" onchange="dropFilter('stage',this.value)">
-      <option value="all">All stages</option>
-      <option value="created">Created</option>
-      <option value="assigned">Assigned</option>
-      <option value="inprogress">In progress</option>
-      <option value="review">Review</option>
-      <option value="complete">Complete</option>
-    </select>
-    <span class="filter-label">Priority:</span>
-    <select class="filter-select" id="fsPriority" onchange="dropFilter('priority',this.value)">
-      <option value="all">All priorities</option>
-      <option value="urgent">Urgent</option>
-      <option value="high">High</option>
-      <option value="medium">Medium</option>
-      <option value="low">Low</option>
-    </select>
-    <span class="filter-label">Lineage:</span>
-    <select class="filter-select" id="fsLineage" onchange="dropFilter('lineage',this.value)">
-      <option value="all">All lineages</option>
-      <option>Land &amp; Forest</option><option>Farm &amp; Garden</option>
-      <option>Building Improvements</option><option>Other Building</option>
-      <option>Site Infrastructure</option><option>Housekeeping</option>
-      <option>Kitchen</option><option>Dining</option><option>Administration</option>
-    </select>
-    <span class="filter-label">Assignee:</span>
-    <select class="filter-select" id="fsAssignee" onchange="dropFilter('assignee',this.value)">
-      <option value="all">All assignees</option>
-    </select>
-  </div>
-
   <div class="list-container" id="listView">
-    <div class="bulk-bar hidden" id="bulkBar">
-      <input type="checkbox" id="selectAllChk" style="width:14px;height:14px;accent-color:var(--accent);cursor:pointer" onchange="toggleSelectAll(this.checked)" />
-      <span class="bulk-count" id="bulkCount">0 selected</span>
-      <div class="bulk-sep"></div>
-      <select class="filter-select" style="font-size:12px;padding:4px 8px" onchange="bulkChangeStage(this.value);this.value=''">
-        <option value="">Change stage…</option>
-        <option value="created">Created</option>
-        <option value="assigned">Assigned</option>
-        <option value="inprogress">In progress</option>
-        <option value="review">Review</option>
-        <option value="complete">Complete</option>
-      </select>
-      <button class="btn-secondary delete-btn" style="font-size:12px;padding:4px 10px" onclick="bulkArchive()">Archive</button>
-      <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:auto" onclick="clearSelection()">✕ Clear</button>
-    </div>
     <div id="weatherBannerInline"></div>
     <div class="email-list" id="listBody"></div>
   </div>
@@ -872,7 +850,8 @@
       <button onclick="calNav(-1)" style="background:none;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:4px 10px;cursor:pointer;color:var(--text-primary);font-size:14px">‹</button>
       <div id="calMonthLabel" style="font-size:15px;font-weight:600;flex:1;text-align:center"></div>
       <button onclick="calNav(1)" style="background:none;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:4px 10px;cursor:pointer;color:var(--text-primary);font-size:14px">›</button>
-      <button onclick="calGoToday()" style="background:none;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:4px 10px;cursor:pointer;color:var(--text-secondary);font-size:12px">Today</button>
+      <button onclick="calGoToday();openDayOverview(getTodayStr())" style="background:none;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:4px 10px;cursor:pointer;color:var(--text-secondary);font-size:12px">Today</button>
+      <button onclick="open3DayOverview()" style="background:none;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:4px 10px;cursor:pointer;color:var(--text-secondary);font-size:12px">3 Day</button>
     </div>
     <div id="calGrid"></div>
   </div>
@@ -966,14 +945,18 @@
           <input class="form-input" type="date" id="fDue" />
         </div>
       </div>
+      <div class="form-group">
+        <label class="form-label">Budget hrs</label>
+        <input class="form-input" type="number" id="fHours" placeholder="e.g. 24" min="0" step="0.5" />
+      </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Estimated hours</label>
-          <input class="form-input" type="number" id="fHours" placeholder="e.g. 24" min="0" step="0.5" />
+          <label class="form-label">Hrs completed</label>
+          <input class="form-input" type="number" id="fHrsCompleted" placeholder="0" min="0" step="0.5" />
         </div>
         <div class="form-group">
-          <label class="form-label">% complete</label>
-          <input class="form-input" type="number" id="fPercent" placeholder="0" min="0" max="100" />
+          <label class="form-label">Hrs today</label>
+          <input class="form-input" type="number" id="fHrsToday" placeholder="0" min="0" step="0.5" />
         </div>
       </div>
       <div class="form-group">
@@ -1168,6 +1151,7 @@ function fromDb(row){
     stage:row.stage||'assigned',priority:row.priority||'medium',
     assignees:row.assignees||[],startDate:row.start_date||'',dueDate:row.due_date||'',
     followUpDate:row.follow_up_date||'',estimatedHours:row.estimated_hours||0,
+    hrsCompleted:row.hrs_completed||0,hrsToday:row.hrs_today||0,
     percentComplete:row.percent_complete||0,humanResources:row.human_resources||0,
     location:row.location||'',suggestedSchedule:row.suggested_schedule||'',
     weatherDependent:row.weather_dependent||'no',weatherNote:row.weather_note||'',
@@ -1186,6 +1170,7 @@ function toDb(data){
     project:data.project||null,lineage:data.lineage||null,stage:data.stage,priority:data.priority,
     assignees:data.assignees,start_date:data.startDate||null,due_date:data.dueDate||null,
     follow_up_date:data.followUpDate||null,estimated_hours:data.estimatedHours||null,
+    hrs_completed:data.hrsCompleted||null,hrs_today:data.hrsToday||null,
     percent_complete:data.percentComplete||0,human_resources:data.humanResources||null,
     location:data.location||null,suggested_schedule:data.suggestedSchedule||null,
     weather_dependent:data.weatherDependent||'no',weather_note:data.weatherNote||null,
@@ -1472,6 +1457,7 @@ function renderList(){
     updateBulkBar();return;
   }
   if(!ft.length){el.innerHTML='<div class="email-list-empty">No tasks found</div>';updateBulkBar();return;}
+  fetchShortNames(ft,24);
   // Build date buckets
   const now=new Date();
   const pad=n=>String(n).padStart(2,'0');
@@ -1520,24 +1506,20 @@ function renderList(){
     const assigned=t.assignees.length>0;
     const avC=STAGE_AV[t.stage]||{bg:'var(--bg-tertiary)',fg:'var(--text-tertiary)'};
     const avLabel=assigned?initials(t.assignees[0]):'?';
-    const extra=t.assignees.length>1?` +${t.assignees.length-1}`:'';
-    const metaParts=[t.lineage?escHtml(t.lineage):'',pm.label+(extra?extra:'')].filter(Boolean).join(' · ');
+    const displayName=listShortName(t);
     const recurBadge=t.recurrenceType?'🔁 ':'';
     const wxRisk=taskWeatherRisk(t);
-    const wxBadge=wxRisk?`<span title="${wxRisk.alerts.join(' · ')}" style="font-size:13px;cursor:default" onclick="event.stopPropagation();toggleWeatherPanel()">${wmoIcon(wxRisk.code).icon}</span>`:'';
+    const wxBadge=wxRisk?`<span title="${wxRisk.alerts.join(' · ')}" style="font-size:13px;cursor:default;flex-shrink:0" onclick="event.stopPropagation();toggleWeatherPanel()">${wmoIcon(wxRisk.code).icon}</span>`:'';
     return`<div class="email-item">
-      <div class="email-row${sel?' selected':''}${isOpen?' open':''}" onclick="toggleExpand('${t.id}')">
-        <div class="er-check" onclick="event.stopPropagation()">
-          <label><input type="checkbox" ${sel?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" /></label>
-        </div>
-        <div class="er-avatar" style="background:${avC.bg};color:${avC.fg}">${avLabel}</div>
+      <div class="email-row${isOpen?' open':''}" onclick="toggleExpand('${t.id}')">
+        <div class="er-avatar" style="background:${avC.bg};color:${avC.fg};flex-shrink:0" title="${t.assignees.join(', ')||'Unassigned'}">${avLabel}</div>
         <div class="er-body">
-          <div class="er-title">${escHtml(t.name)}${recurBadge?` <span style="font-size:11px">🔁</span>`:''}</div>
+          <div class="er-title" title="${escHtml(t.name)}">${escHtml(displayName)}${recurBadge?` <span style="font-size:11px">🔁</span>`:''}</div>
         </div>
         <div class="er-right">
           ${wxBadge}
-          <span class="er-due${od?' overdue':''}">${t.dueDate?fmtDate(t.dueDate):''}</span>
-          <span class="er-chevron">›</span>
+          <button onclick="event.stopPropagation();openId='${t.id}';openModal(true)" style="background:none;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:3px 8px;font-size:11px;cursor:pointer;color:var(--text-secondary);white-space:nowrap" title="Edit task">✎ Edit</button>
+          <button class="btn-secondary delete-btn" onclick="event.stopPropagation();archiveTaskById('${t.id}')" style="font-size:11px;padding:3px 8px;white-space:nowrap" title="Archive task">Archive</button>
         </div>
       </div>
       <div class="email-expand${isOpen?'':' hidden'}" id="exp-${t.id}">
@@ -1550,7 +1532,8 @@ function renderList(){
     const group=sortTasks(buckets[key]);
     if(!group.length)return;
     const isPast=key==='past';
-    html+=`<div class="list-date-header${isPast?' past-due':''}"><span class="ldh-label">${bucketLabel(key)}</span><span class="ldh-count">${group.length}</span></div>`;
+    const clickable=key!=='past'&&key!=='none';
+    html+=`<div class="list-date-header${isPast?' past-due':''}${clickable?' hoverable':''}" ${clickable?`onclick="openDayOverview('${key}')" style="cursor:pointer"`:''}><span class="ldh-label">${bucketLabel(key)}</span><span class="ldh-count">${group.length}</span></div>`;
     html+=group.map(taskRow).join('');
   });
   el.innerHTML=html;
@@ -1580,16 +1563,7 @@ function toggleSelectAll(checked){
 
 function clearSelection(){selectedIds.clear();renderList();}
 
-function updateBulkBar(){
-  const bar=document.getElementById('bulkBar');
-  const cnt=document.getElementById('bulkCount');
-  if(!bar)return;
-  const n=selectedIds.size;
-  bar.classList.toggle('hidden',n===0);
-  if(cnt)cnt.textContent=`${n} selected`;
-  const chk=document.getElementById('selectAllChk');
-  if(chk){const ft=filteredTasks();chk.checked=ft.length>0&&ft.every(t=>selectedIds.has(t.id));}
-}
+function updateBulkBar(){} // removed
 
 async function bulkChangeStage(stage){
   if(!stage||!selectedIds.size)return;
@@ -1623,11 +1597,13 @@ function taskExpandHtml(t){
 
   const stageRow=`<span class="badge ${sm.badge}">${sm.label}</span>`;
 
-  const pctRow=`<input type="range" class="progress-range" min="0" max="100" step="1"
-      value="${t.percentComplete||0}"
-      oninput="document.getElementById('pct-lbl').textContent=Math.round(this.value)+'%'"
-      onchange="savePercent('${id}',this.value)" style="flex:1" />
-     <span id="pct-lbl" class="pct-label">${t.percentComplete||0}%</span>`;
+  const calcPct=(()=>{
+    const budget=parseFloat(t.estimatedHours)||0;
+    if(!budget)return t.percentComplete||0;
+    const done=(parseFloat(t.hrsCompleted)||0)+(parseFloat(t.hrsToday)||0);
+    return Math.min(100,Math.round(done/budget*100));
+  })();
+  const pctRow=`<span>${calcPct}%</span>`;
 
   const avRow=t.assignees.map(a=>{const c=avColor(a);
     return`<div class="avatar" style="background:${c.bg};color:${c.fg};border:none">${initials(a)}</div><span>${escHtml(a)}</span>`;
@@ -1678,12 +1654,10 @@ function taskExpandHtml(t){
     <div class="expand-header" style="flex-wrap:wrap;gap:8px">
       <div style="min-width:0;flex:1 1 180px">
         <div class="expand-title" style="word-break:break-word">${escHtml(t.name)}</div>
-        <div class="expand-sub">${[t.creatorName,t.lineage,t.project].filter(Boolean).map(escHtml).join(' · ')}</div>
+        <div class="expand-sub">${[t.assignees.length?t.assignees[0]:null,t.lineage,t.project].filter(Boolean).map(escHtml).join(' · ')}</div>
       </div>
       <div class="expand-actions" style="flex-shrink:0">
         <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update">🎤</button>
-        ${isManager&&viewMode==='active'?`<button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="openModal(true)">Edit</button>`:''}
-        ${isManager&&viewMode==='active'?`<button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="archiveTask()">Archive</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-primary" style="font-size:12px;padding:5px 10px" onclick="restoreTask()">Restore</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="deleteTaskPermanently()">Delete forever</button>`:''}
       </div>
@@ -1691,14 +1665,13 @@ function taskExpandHtml(t){
     ${t.description?`<div class="panel-section"><div class="sec-label" style="margin-bottom:4px">Description</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.6">${escHtml(t.description)}</div></div>`:''}
     <div class="panel-section">
       <div class="field-grid-2">
-        <div class="frl">Priority</div><div class="frv"><span class="badge ${pm.badge}">${pm.label}</span>${od?' <span class="badge badge-red">Overdue</span>':''}</div>
-        ${t.assignees.length?`<div class="frl">Assigned</div><div class="frv" style="flex-wrap:wrap;gap:4px">${avRow}</div>`:''}
-        ${t.humanResources?`<div class="frl">Resources</div><div class="frv">${t.humanResources} people</div>`:''}
+        ${t.estimatedHours?`<div class="frl">Budget hrs</div><div class="frv">${t.estimatedHours} hrs</div>`:''}
+        ${t.hrsCompleted?`<div class="frl">Hrs completed</div><div class="frv">${t.hrsCompleted} hrs</div>`:''}
+        <div class="frl">% complete</div><div class="frv">${pctRow}</div>
+        ${t.hrsToday?`<div class="frl">Hrs today</div><div class="frv">${t.hrsToday} hrs</div>`:''}
+        ${t.dueDate?(()=>{const diff=Math.ceil((new Date(t.dueDate+'T00:00:00')-new Date().setHours(0,0,0,0))/(86400000));return`<div class="frl">Days to due</div><div class="frv" style="${diff<0?'color:#A32D2D;font-weight:500':diff===0?'color:#B45309;font-weight:500':''}">${diff<0?`${Math.abs(diff)} days overdue`:diff===0?'Due today':`${diff} day${diff!==1?'s':''}`}</div>`;})():''}
         ${t.startDate?`<div class="frl">Start date</div><div class="frv">${fmtDate(t.startDate)}</div>`:''}
         ${t.dueDate?`<div class="frl">Due date</div><div class="frv" style="${od?'color:#A32D2D;font-weight:500':''}">${fmtDate(t.dueDate)}</div>`:''}
-        ${t.followUpDate?`<div class="frl">Follow-up</div><div class="frv">${fmtDate(t.followUpDate)}</div>`:''}
-        ${t.estimatedHours?`<div class="frl">Est. hours</div><div class="frv">${t.estimatedHours} hrs</div>`:''}
-        <div class="frl">% complete</div><div class="frv">${pctRow}</div>
         ${t.recurrenceType?`<div class="frl">Repeats</div><div class="frv">🔁 ${recurrenceLabel(t)}</div>`:''}
         ${t.location?`<div class="frl">Location</div><div class="frv">${escHtml(t.location)}</div>`:''}
         ${t.weatherDependent==='yes'?`<div class="frl">Weather</div><div class="frv"><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#E24B4A;display:inline-block"></span>${t.weatherNote?escHtml(t.weatherNote):'Yes'}</span></div>`:''}
@@ -1706,8 +1679,9 @@ function taskExpandHtml(t){
     </div>
     ${(t.steps||[]).length?`<div class="panel-section"><div class="sec-label" style="margin-bottom:4px">Steps</div>${stepsHtml}</div>`:''}
     ${(t.materials||[]).length||(t.tools||[]).length?`<div class="panel-section">
-      ${(t.materials||[]).length?`<div class="sec-label" style="margin-bottom:4px">Materials</div>${matsHtml}`:''}
-      ${(t.tools||[]).length?`<div class="sec-label" style="margin-top:${(t.materials||[]).length?'8px':'0'};margin-bottom:4px">Tools</div><div style="display:flex;flex-wrap:wrap;gap:3px">${toolsHtml}</div>`:''}
+      <div class="sec-label" style="margin-bottom:4px">Materials &amp; Tools</div>
+      ${(t.materials||[]).length?matsHtml:''}
+      ${(t.tools||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:${(t.materials||[]).length?'8px':'0'}">${toolsHtml}</div>`:''}
     </div>`:''}
     ${t.taskNotes?`<div class="panel-section"><div class="sec-label" style="margin-bottom:4px">Notes</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.5;background:var(--bg-tertiary);padding:8px 10px;border-radius:var(--radius-sm)">${escHtml(t.taskNotes)}</div></div>`:''}
     <div class="panel-section" style="">
@@ -1769,10 +1743,13 @@ function closeDetail(){
   renderList();
 }
 
-function openCalDetail(id){
+function openCalDetail(id,backFn=null){
   const t=tasks.find(t=>t.id===id);
   if(!t)return;
+  // Close day overview if open, then open cal detail
+  document.getElementById('dayOverviewModal').style.display='none';
   openId=id; // keeps stage buttons / updates working
+  setCalDetailBack(backFn||null);
   const body=document.getElementById('calDetailBody');
   if(body)body.innerHTML=taskExpandHtml(t);
   document.getElementById('calDetailModal').style.display='flex';
@@ -1781,9 +1758,216 @@ function openCalDetail(id){
 
 function closeCalDetail(){
   openId=null;
+  setCalDetailBack(null);
   document.getElementById('calDetailModal').style.display='none';
-  // Refresh calendar so any edits (stage, %, etc.) are reflected
   renderCalendar();
+}
+
+function getTodayStr(){const n=new Date();const p=x=>String(x).padStart(2,'0');return`${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`;}
+
+let currentDayBackFn=null;
+let calDetailBackFn=null;
+
+function setDayBack(fn){
+  currentDayBackFn=fn||null;
+  const btn=document.getElementById('dayOverviewBackBtn');
+  if(btn)btn.style.display=fn?'inline-block':'none';
+}
+function dayOverviewGoBack(){if(currentDayBackFn)currentDayBackFn();}
+
+function setCalDetailBack(fn){
+  calDetailBackFn=fn||null;
+  const btn=document.getElementById('calDetailBackBtn');
+  if(btn)btn.style.display=fn?'flex':'none';
+}
+function calDetailGoBack(){
+  if(!calDetailBackFn)return;
+  openId=null;
+  document.getElementById('calDetailModal').style.display='none';
+  setCalDetailBack(null);
+  calDetailBackFn();
+}
+
+function open3DayOverview(){
+  const todayStr=getTodayStr();
+  const days=[0,1,2].map(i=>{const d=new Date(todayStr+'T12:00:00');d.setDate(d.getDate()+i);const p=x=>String(x).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;});
+  const ft=filteredTasks();
+
+  setDayBack(null);
+  document.getElementById('dayOverviewTitle').textContent='Next 3 Days';
+  document.getElementById('dayOverviewSub').textContent='';
+  document.getElementById('dayOverviewWeather').style.display='none';
+
+  let html='';
+  days.forEach(ds=>{
+    const d=new Date(ds+'T12:00:00');
+    const isToday=ds===todayStr;
+    const label=isToday?`Today · ${d.toLocaleDateString('en-CA',{month:'long',day:'numeric'})}`:d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'});
+    const dayTasks=ft.filter(t=>{const td=t.dueDate||t.startDate;return td&&td.slice(0,10)===ds;});
+    const wx=weatherForecast?.find(w=>w.date===ds)||(isToday?weatherForecast?.[0]:null);
+    const wxSummary=wx?`<span style="margin-left:auto;font-size:12px;color:var(--text-secondary);cursor:pointer;padding:2px 4px;border-radius:4px" onclick="event.stopPropagation();openDayWeatherDetail('${ds}',open3DayOverview)" title="View detailed weather">${wmoIcon(wx.code).icon} ↑${wx.maxTemp}° ↓${wx.minTemp}°${wx.alerts.length?' ⚠':''} ›</span>`:'';
+
+    html+=`<div style="border-bottom:2px solid var(--border-md)">
+      <div style="display:flex;align-items:center;padding:8px 16px 5px;background:var(--bg-secondary);cursor:pointer" onclick="openDayOverview('${ds}',open3DayOverview)">
+        <span style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em;flex:1">${label}</span>
+        ${wxSummary}
+      </div>`;
+    if(dayTasks.length){
+      dayTasks.forEach(t=>{
+        const c=chipColors(t.lineage||'');
+        const od=t.stage!=='complete'&&t.dueDate&&t.dueDate.slice(0,10)<todayStr;
+        html+=`<div style="padding:8px 16px;border-top:0.5px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px" onclick="openCalDetail('${t.id}',open3DayOverview)">
+          <span style="width:7px;height:7px;border-radius:50%;background:${od?'#E24B4A':c.bg};flex-shrink:0"></span>
+          <span style="flex:1;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.name)}</span>
+          <span style="font-size:11px;color:var(--text-tertiary)">${STAGE[t.stage]?.label||t.stage}</span>
+        </div>`;
+      });
+    } else {
+      html+=`<div style="padding:8px 16px;font-size:12px;color:var(--text-tertiary);border-top:0.5px solid var(--border)">No tasks</div>`;
+    }
+    html+=`</div>`;
+  });
+
+  document.getElementById('dayOverviewBody').innerHTML=html;
+  document.getElementById('dayOverviewModal').style.display='flex';
+}
+
+function openDayOverview(ds,backFn=null){
+  const d=new Date(ds+'T12:00:00');
+  const now=new Date();
+  const todayStr=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const isToday=ds===todayStr;
+  const isPast=ds<todayStr;
+  const label=isToday
+    ?`Today · ${d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'})}`
+    :d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  setDayBack(backFn||null);
+  document.getElementById('dayOverviewTitle').textContent=label;
+
+  // Tasks due or starting this day
+  const ft=filteredTasks();
+  const dueTasks=ft.filter(t=>t.dueDate&&t.dueDate.slice(0,10)===ds);
+  const startTasks=ft.filter(t=>t.startDate&&t.startDate.slice(0,10)===ds&&(!t.dueDate||t.dueDate.slice(0,10)!==ds));
+  const total=dueTasks.length+startTasks.length;
+  document.getElementById('dayOverviewSub').textContent=total?`${total} task${total!==1?'s':''}`:isPast?'No tasks':'No tasks scheduled';
+
+  // Weather strip
+  const wxEl=document.getElementById('dayOverviewWeather');
+  const wxDay=weatherForecast&&ds>=todayStr?(weatherForecast.find(w=>w.date===ds)||(isToday?weatherForecast[0]:null)):null;
+  if(wxDay){
+    const ic=wmoIcon(wxDay.code);
+    const alertsHtml=wxDay.alerts.length?`<span style="color:var(--danger);font-size:11px;margin-left:8px">⚠ ${wxDay.alerts.join(' · ')}</span>`:'';
+    wxEl.style.display='flex';
+    wxEl.style.alignItems='center';
+    wxEl.style.gap='10px';
+    wxEl.style.cursor='pointer';
+    wxEl.onclick=()=>openDayWeatherDetail(ds,()=>openDayOverview(ds,backFn));
+    wxEl.title='View detailed weather';
+    wxEl.innerHTML=`<span style="font-size:22px">${ic.icon}</span>
+      <span style="font-size:13px;font-weight:500">${ic.label}</span>
+      <span style="font-size:12px;color:var(--text-secondary)">↑${Math.round(wxDay.maxTemp)}° ↓${Math.round(wxDay.minTemp)}°</span>
+      <span style="font-size:12px;color:var(--text-tertiary)">${wxDay.precipSum>0?`🌧 ${wxDay.precipSum.toFixed(1)}mm`:''}</span>
+      ${alertsHtml}<span style="margin-left:auto;font-size:11px;color:var(--text-tertiary)">›</span>`;
+  } else {
+    wxEl.style.display='none';
+  }
+
+  // Task list
+  function taskRow(t,badge){
+    const c=chipColors(t.lineage||'');
+    const sm=STAGE[t.stage];
+    const od=t.stage!=='complete'&&t.dueDate&&t.dueDate.slice(0,10)<todayStr;
+    return`<div style="padding:10px 16px;border-bottom:0.5px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:10px" onclick="openCalDetail('${t.id}',()=>openDayOverview('${ds}'))">
+      <span style="width:8px;height:8px;border-radius:50%;background:${od?'#E24B4A':c.bg};flex-shrink:0"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.name)}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);margin-top:1px">${t.lineage?escHtml(t.lineage)+' · ':''}${sm?.label||t.stage}</div>
+      </div>
+      <span style="font-size:10px;padding:2px 6px;border-radius:6px;background:var(--bg-tertiary);color:var(--text-tertiary);flex-shrink:0">${badge}</span>
+    </div>`;
+  }
+
+  let html='';
+  if(dueTasks.length){
+    html+=`<div style="padding:7px 16px 4px;font-size:10px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em">Due</div>`;
+    html+=dueTasks.map(t=>taskRow(t,'Due')).join('');
+  }
+  if(startTasks.length){
+    html+=`<div style="padding:7px 16px 4px;font-size:10px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em">Starting</div>`;
+    html+=startTasks.map(t=>taskRow(t,'Start')).join('');
+  }
+  if(!html) html=`<div style="padding:24px 16px;text-align:center;color:var(--text-tertiary);font-size:13px">No tasks for this day</div>`;
+  document.getElementById('dayOverviewBody').innerHTML=html;
+  document.getElementById('dayOverviewModal').style.display='flex';
+}
+
+function closeDayOverview(){
+  document.getElementById('dayOverviewModal').style.display='none';
+}
+
+function openDayWeatherDetail(ds,backFn=null){
+  const wx=weatherForecast?.find(w=>w.date===ds);
+  if(!wx)return;
+  setDayBack(backFn||null);
+  const d=new Date(ds+'T12:00:00');
+  const label=d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  document.getElementById('dayOverviewTitle').textContent=label;
+
+  const fmtTime=iso=>{if(!iso)return'';const t=new Date(iso);return t.toLocaleTimeString('en-CA',{hour:'numeric',minute:'2-digit',hour12:true});};
+  const ic=wmoIcon(wx.code);
+  document.getElementById('dayOverviewSub').textContent=`${ic.label} · ↑${wx.maxTemp}° ↓${wx.minTemp}°`;
+
+  // Weather strip — alerts
+  const wxEl=document.getElementById('dayOverviewWeather');
+  if(wx.alerts.length){
+    wxEl.style.display='block';
+    wxEl.innerHTML=`<div style="font-size:11px;font-weight:600;color:var(--danger);margin-bottom:4px">⚠ Alerts</div>`+
+      wx.alerts.map(a=>`<div style="font-size:12px;color:var(--danger)">${a}</div>`).join('');
+  } else {
+    wxEl.style.display='none';
+  }
+
+  const PERIOD_ORDER=['morning','afternoon','evening','night'];
+  const PERIOD_ICONS={morning:'🌅',afternoon:'☀️',evening:'🌆',night:'🌙'};
+  const PERIOD_LABELS={morning:'Morning',afternoon:'Afternoon',evening:'Evening',night:'Night'};
+
+  let html=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border)">`;
+  PERIOD_ORDER.forEach(p=>{
+    const pd=wx.periods[p];
+    const pic=wmoIcon(pd.code);
+    html+=`<div style="background:var(--bg-primary);padding:12px 14px">
+      <div style="font-size:11px;color:var(--text-tertiary);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">${PERIOD_ICONS[p]} ${PERIOD_LABELS[p]}</div>
+      <div style="font-size:22px;font-weight:600;margin-bottom:2px">${pd.temp}°</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">${pic.icon} ${pic.label}</div>
+      ${pd.precip>0?`<div style="font-size:11px;color:var(--text-tertiary)">🌧 ${pd.precip}mm</div>`:''}
+      ${pd.snow>0?`<div style="font-size:11px;color:var(--text-tertiary)">❄️ ${pd.snow}cm</div>`:''}
+      ${pd.wind>0?`<div style="font-size:11px;color:var(--text-tertiary)">💨 ${pd.wind}km/h</div>`:''}
+    </div>`;
+  });
+  html+=`</div>`;
+
+  // Summary row
+  html+=`<div style="display:flex;gap:0;border-top:0.5px solid var(--border)">
+    <div style="flex:1;padding:10px 14px;text-align:center;border-right:0.5px solid var(--border)">
+      <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.04em">Precip</div>
+      <div style="font-size:14px;font-weight:600;margin-top:3px">${wx.precipSum>0?wx.precipSum+'mm':'—'}</div>
+    </div>
+    <div style="flex:1;padding:10px 14px;text-align:center;border-right:0.5px solid var(--border)">
+      <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.04em">Wind</div>
+      <div style="font-size:14px;font-weight:600;margin-top:3px">${wx.maxWind>0?wx.maxWind+'km/h':'—'}</div>
+    </div>
+    <div style="flex:1;padding:10px 14px;text-align:center;border-right:0.5px solid var(--border)">
+      <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.04em">Sunrise</div>
+      <div style="font-size:14px;font-weight:600;margin-top:3px">${fmtTime(wx.sunrise)}</div>
+    </div>
+    <div style="flex:1;padding:10px 14px;text-align:center">
+      <div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.04em">Sunset</div>
+      <div style="font-size:14px;font-weight:600;margin-top:3px">${fmtTime(wx.sunset)}</div>
+    </div>
+  </div>`;
+
+  document.getElementById('dayOverviewBody').innerHTML=html;
+  document.getElementById('dayOverviewModal').style.display='flex';
 }
 
 function openCalDayList(ds){
@@ -2328,12 +2512,16 @@ async function deleteUpdate(uid){
 
 async function archiveTask(){
   if(!openId)return;
-  const t=tasks.find(t=>t.id===openId);
+  await archiveTaskById(openId);
+}
+async function archiveTaskById(id){
+  const t=tasks.find(t=>t.id===id);
   if(!confirm(`Archive "${t?.name||'this task'}"?`))return;
-  const{error}=await sb.from('tasks').update({archived:true}).eq('id',openId);
+  const{error}=await sb.from('tasks').update({archived:true}).eq('id',id);
   if(error){console.error('archiveTask:',error);return;}
-  await logUpdate(openId,'Task archived');
-  closeDetail();await loadData();
+  await logUpdate(id,'Task archived');
+  if(openId===id)closeDetail();
+  await loadData();
 }
 async function restoreTask(id){
   const tid=id||openId;if(!tid)return;
@@ -2452,7 +2640,8 @@ function openModal(editing){
     populateAssigneePicker(t.assignees);
     document.getElementById('fDue').value=t.dueDate||'';
     document.getElementById('fHours').value=t.estimatedHours||'';
-    document.getElementById('fPercent').value=t.percentComplete||0;
+    document.getElementById('fHrsCompleted').value=t.hrsCompleted||'';
+    document.getElementById('fHrsToday').value=t.hrsToday||'';
     document.getElementById('fFollowup').value=t.followUpDate||'';
     document.getElementById('fTools').value=(t.tools||[]).join(', ');
     document.getElementById('fNotes').value=t.taskNotes||'';
@@ -2478,7 +2667,6 @@ function openModal(editing){
     document.getElementById('fPriority').value='medium';
     document.getElementById('fResources').value='';
     document.getElementById('fWeather').value='no';
-    document.getElementById('fPercent').value='0';
     document.getElementById('stepsWrap').innerHTML='';
     document.getElementById('matsWrap').innerHTML='';
     const rType2=document.getElementById('fRecurrenceType');
@@ -2611,7 +2799,8 @@ async function saveTask(){
     startDate:document.getElementById('fStart').value,
     dueDate:document.getElementById('fDue').value,
     estimatedHours:parseFloat(document.getElementById('fHours').value)||0,
-    percentComplete:parseInt(document.getElementById('fPercent').value)||0,
+    hrsCompleted:parseFloat(document.getElementById('fHrsCompleted').value)||0,
+    hrsToday:parseFloat(document.getElementById('fHrsToday').value)||0,
     followUpDate:document.getElementById('fFollowup').value,
     steps:getSteps(),materials:getMats(),tools:parse('fTools'),
     taskNotes:document.getElementById('fNotes').value.trim(),
@@ -2619,6 +2808,12 @@ async function saveTask(){
     recurrenceInterval:parseInt(document.getElementById('fRecurrenceInterval')?.value)||1,
     recurrenceEndDate:document.getElementById('fRecurrenceEndDate')?.value||''
   };
+  // Calculate % complete from hrs fields
+  if(data.estimatedHours>0){
+    data.percentComplete=Math.min(100,Math.round(((data.hrsCompleted||0)+(data.hrsToday||0))/data.estimatedHours*100));
+  } else {
+    data.percentComplete=0;
+  }
   // Auto-advance stage: created → assigned when assignees added
   if(data.assignees.length>0&&data.stage==='created')data.stage='assigned';
   const wasEditing=editId;
@@ -2645,14 +2840,14 @@ async function saveTask(){
 function doSearch(val){filter.search=val.trim();render();}
 
 function updateTopbarTitle(){
-  if(viewMode==='archived'){document.getElementById('topbarTitle').textContent='Archived tasks';return;}
+  if(viewMode==='archived'){const tt=document.getElementById('topbarTitle');if(tt)tt.textContent='Archived tasks';return;}
   let title='All tasks';
   if(filter.search)title=`"${filter.search}"`;
   else if(filter.stage!=='all'&&filter.lineage==='all'&&filter.priority==='all')title=STAGE[filter.stage]?.label||'All tasks';
   else if(filter.lineage!=='all'&&filter.stage==='all'&&filter.priority==='all')title=filter.lineage;
   else if(filter.priority!=='all'&&filter.stage==='all'&&filter.lineage==='all')title=(PRIORITY[filter.priority]?.label||'')+' priority';
   else if(filter.stage!=='all'||filter.lineage!=='all'||filter.priority!=='all')title='Filtered tasks';
-  document.getElementById('topbarTitle').textContent=title;
+  const ttEl=document.getElementById('topbarTitle');if(ttEl)ttEl.textContent=title;
 }
 
 function dropFilter(type,val){
@@ -2763,11 +2958,17 @@ function updateSfBtns(){
     sfAss.classList.toggle('filtered',av!=='all');
   }
   // Weather dependent
-  const wdLabels={all:'Weather dep.',yes:'Yes — weather dep.',no:'No — not dependent',blank:'Not set'};
+  const wdLabels={all:'All weather',yes:'Yes — weather dep.',no:'No — not dependent'};
   const wv=filter.weatherDependent||'all';
   const sfWd=document.getElementById('sfBtn-weatherDependent');
   if(sfWd){
-    document.getElementById('sfLabel-weatherDependent').textContent=wdLabels[wv]||'Weather dep.';
+    document.getElementById('sfLabel-weatherDependent').textContent=wdLabels[wv]||'All weather';
+    const wdAll=tasks.length,wdYes=tasks.filter(t=>t.weatherDependent==='yes').length,wdNo=tasks.filter(t=>t.weatherDependent==='no').length;
+    const wdCount=wv==='all'?wdAll:wv==='yes'?wdYes:wdNo;
+    document.getElementById('sfCount-weatherDependent').textContent=wdCount;
+    const nbWdAll=document.getElementById('nb-wd-all');if(nbWdAll)nbWdAll.textContent=wdAll;
+    const nbWdYes=document.getElementById('nb-wd-yes');if(nbWdYes)nbWdYes.textContent=wdYes;
+    const nbWdNo=document.getElementById('nb-wd-no');if(nbWdNo)nbWdNo.textContent=wdNo;
     sfWd.classList.toggle('filtered',wv!=='all');
   }
   // Due date
@@ -2776,8 +2977,43 @@ function updateSfBtns(){
   const sfDd=document.getElementById('sfBtn-dueDate');
   if(sfDd){
     document.getElementById('sfLabel-dueDate').textContent=ddLabels[dv]||'All dates';
+    const now2=new Date();
+    const pad2=n=>String(n).padStart(2,'0');
+    const tod=`${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-${pad2(now2.getDate())}`;
+    const tmr=new Date(now2);tmr.setDate(now2.getDate()+1);
+    const tmrS=`${tmr.getFullYear()}-${pad2(tmr.getMonth()+1)}-${pad2(tmr.getDate())}`;
+    const weekStart=(offset=0)=>{const d=new Date(now2);const day=d.getDay();d.setDate(d.getDate()-(day===0?6:day-1)+offset);return d;};
+    const fmtD=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    const wkMon=fmtD(weekStart(0)),wkSun=fmtD(new Date(weekStart(0).getTime()+6*86400000));
+    const nwMon=fmtD(weekStart(7)),nwSun=fmtD(new Date(weekStart(7).getTime()+6*86400000));
+    const mStart=`${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-01`;
+    const mEnd=`${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-${pad2(new Date(now2.getFullYear(),now2.getMonth()+1,0).getDate())}`;
+    const ddCnt={all:tasks.length,today:0,tomorrow:0,'this-week':0,'next-week':0,'this-month':0};
+    tasks.forEach(t=>{if(!t.dueDate)return;const d=t.dueDate.slice(0,10);
+      if(d===tod)ddCnt.today++;
+      if(d===tmrS)ddCnt.tomorrow++;
+      if(d>=wkMon&&d<=wkSun)ddCnt['this-week']++;
+      if(d>=nwMon&&d<=nwSun)ddCnt['next-week']++;
+      if(d>=mStart&&d<=mEnd)ddCnt['this-month']++;
+    });
+    document.getElementById('sfCount-dueDate').textContent=ddCnt[dv]??ddCnt.all;
+    const nbMap={all:'nb-dd-all',today:'nb-dd-today',tomorrow:'nb-dd-tomorrow','this-week':'nb-dd-week','next-week':'nb-dd-nweek','this-month':'nb-dd-month'};
+    Object.entries(nbMap).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.textContent=ddCnt[k];});
     sfDd.classList.toggle('filtered',dv!=='all');
   }
+  // Reset button visibility
+  const anyFiltered=filter.stage!=='all'||filter.lineage!=='all'||filter.assignee!=='all'||filter.priority!=='all'||filter.weatherDependent!=='all'||filter.dueDate!=='all';
+  const resetBtn=document.getElementById('resetFiltersBtn');
+  if(resetBtn)resetBtn.style.display=anyFiltered?'block':'none';
+}
+
+function resetFilters(){
+  filter={stage:'all',lineage:'all',assignee:'all',priority:'all',weatherDependent:'all',dueDate:'all',search:filter.search};
+  ['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{
+    document.querySelectorAll(`#sfMenu-${t} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val==='all'));
+  });
+  const s=document.getElementById('searchInput');if(s)s.value=filter.search;
+  render();
 }
 
 function sideFilter(type,val,activeId,prefix){sfFilter(type,val);}
@@ -3201,23 +3437,26 @@ let calYear=new Date().getFullYear(), calMonth=new Date().getMonth();
 // Short-name cache: taskId → {short, name} — persisted in localStorage
 // 'name' is stored so we can detect if the task name has changed and re-fetch
 const CAL_NAMES_KEY='tt_cal_names';
+const LIST_NAMES_KEY='tt_list_names';
 let calShortNames=JSON.parse(localStorage.getItem(CAL_NAMES_KEY)||'{}');
+let listShortNames=JSON.parse(localStorage.getItem(LIST_NAMES_KEY)||'{}');
 
-async function fetchShortNames(taskList){
-  // Skip if already cached with the same task name
+async function fetchShortNames(taskList, maxLen=0){
+  const cache=maxLen>0?listShortNames:calShortNames;
+  const cacheKey=maxLen>0?LIST_NAMES_KEY:CAL_NAMES_KEY;
   const uncached=taskList.filter(t=>{
-    const entry=calShortNames[t.id];
+    const entry=cache[t.id];
     return !entry||entry.name!==t.name;
   });
   if(!uncached.length)return;
   try{
+    const body=maxLen>0
+      ?{tasks:uncached.map(t=>({id:t.id,name:t.name})),maxLen}
+      :uncached.map(t=>({id:t.id,name:t.name}));
     const res=await fetch(`${SUPABASE_URL}/functions/v1/shorten-tasks`,{
       method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'Authorization':`Bearer ${SUPABASE_KEY}`
-      },
-      body:JSON.stringify(uncached.map(t=>({id:t.id,name:t.name})))
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${SUPABASE_KEY}`},
+      body:JSON.stringify(body)
     });
     if(!res.ok)return;
     const data=await res.json();
@@ -3225,18 +3464,21 @@ async function fetchShortNames(taskList){
       data.forEach(r=>{
         if(r.id&&r.short){
           const orig=uncached.find(t=>t.id===r.id);
-          calShortNames[r.id]={short:r.short,name:orig?.name||r.short};
+          cache[r.id]={short:r.short,name:orig?.name||r.short};
         }
       });
-      localStorage.setItem(CAL_NAMES_KEY,JSON.stringify(calShortNames));
-      renderCalendar(); // re-render now that names are ready
+      localStorage.setItem(cacheKey,JSON.stringify(cache));
+      if(maxLen>0)renderList();else renderCalendar();
     }
   } catch(e){console.warn('shorten-tasks:',e);}
 }
 
 function calShortName(t){
   const entry=calShortNames[t.id];
-  // Use cached short name only if the task name hasn't changed
+  return(entry&&entry.name===t.name)?entry.short:t.name;
+}
+function listShortName(t){
+  const entry=listShortNames[t.id];
   return(entry&&entry.name===t.name)?entry.short:t.name;
 }
 
@@ -3372,11 +3614,11 @@ function renderCalendar(){
     const wxDay=weatherForecast?(weatherForecast.find(w=>w.date===ds)||(ds===todayStr?weatherForecast[0]:null)):null;
     const daysAhead=(new Date(ds+'T12:00:00')-new Date(todayStr+'T12:00:00'))/(86400000);
     const wxHtml=wxDay&&ds>=todayStr&&daysAhead<=14
-      ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(' · '):wmoIcon(wxDay.code).label}" style="font-size:13px;line-height:1;cursor:default;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();toggleWeatherPanel()">${wmoIcon(wxDay.code).icon}</span>`
+      ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(' · '):wmoIcon(wxDay.code).label}" style="font-size:13px;line-height:1;cursor:pointer;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();openDayWeatherDetail('${ds}')">${wmoIcon(wxDay.code).icon}</span>`
       :'';
 
     html+=`<div class="cal-cell${isToday?' today':''}">
-      <div style="display:flex;align-items:center;gap:2px">${wxHtml?`<div class="cal-day-num">${d}</div>${wxHtml}`:`<div class="cal-day-num">${d}</div>`}</div>
+      <div style="display:flex;align-items:center;gap:2px">${wxHtml?`<div class="cal-day-num" style="cursor:pointer" onclick="openDayOverview('${ds}')">${d}</div>${wxHtml}`:`<div class="cal-day-num" style="cursor:pointer" onclick="openDayOverview('${ds}')">${d}</div>`}</div>
       ${chips}${overflowHtml}
     </div>`;
   }
@@ -3726,10 +3968,28 @@ initAuth();
 <!-- CALENDAR TASK DETAIL MODAL -->
 <div id="calDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto" onclick="if(event.target===this)closeCalDetail()">
   <div style="background:var(--bg-primary);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);width:100%;max-width:640px">
-    <div style="display:flex;justify-content:flex-end;padding:10px 12px 0">
+    <div style="display:flex;align-items:center;padding:8px 12px 0;gap:6px">
+      <button id="calDetailBackBtn" onclick="calDetailGoBack()" style="display:none;background:none;border:none;font-size:13px;cursor:pointer;color:var(--text-secondary);padding:3px 8px;border-radius:4px;display:none;align-items:center;gap:4px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='none'">‹ Back</button>
+      <div style="flex:1"></div>
       <button onclick="closeCalDetail()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);line-height:1;padding:2px 6px;border-radius:4px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='none'">✕</button>
     </div>
     <div id="calDetailBody" style="padding:0"></div>
+  </div>
+</div>
+
+<!-- DAY OVERVIEW -->
+<div id="dayOverviewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2500;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto" onclick="if(event.target===this)closeDayOverview()">
+  <div style="background:var(--bg-primary);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);width:100%;max-width:520px">
+    <div style="display:flex;align-items:center;padding:14px 16px;border-bottom:0.5px solid var(--border)">
+      <button id="dayOverviewBackBtn" onclick="dayOverviewGoBack()" style="display:none;background:none;border:none;font-size:13px;cursor:pointer;color:var(--text-secondary);padding:3px 8px 3px 2px;border-radius:4px;margin-right:6px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='none'">‹ Back</button>
+      <div style="flex:1">
+        <div id="dayOverviewTitle" style="font-size:16px;font-weight:600"></div>
+        <div id="dayOverviewSub" style="font-size:12px;color:var(--text-tertiary);margin-top:2px"></div>
+      </div>
+      <button onclick="closeDayOverview()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-tertiary);padding:2px 6px;border-radius:4px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='none'">✕</button>
+    </div>
+    <div id="dayOverviewWeather" style="display:none;padding:10px 16px;border-bottom:0.5px solid var(--border);background:var(--bg-secondary)"></div>
+    <div id="dayOverviewBody" style="max-height:60vh;overflow-y:auto"></div>
   </div>
 </div>
 
