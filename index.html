@@ -451,6 +451,9 @@
       .list-container{padding:10px 12px}
       .expand-actions .btn-secondary{font-size:11px;padding:4px 8px}
     }
+    @media(max-width:768px) and (orientation:portrait){
+      .mob-search{display:none}
+    }
 
     /* CALENDAR VIEW */
     .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
@@ -776,7 +779,7 @@
   <div class="mobile-header">
     <button class="mobile-menu-btn" id="mobMenuBtn" onclick="toggleMobSidebar()">☰</button>
     <div id="mobTopbarTitle" style="font-size:15px;font-weight:600;flex-shrink:0">Task Tracker</div>
-    <div class="search-wrap" style="flex:1;min-width:0;max-width:80px">
+    <div class="search-wrap mob-search" style="flex:1;min-width:0;max-width:80px">
       <span class="search-icon">⌕</span>
       <input class="search-input" id="mobSearchInput" placeholder="Search…" oninput="doSearch(this.value)" />
     </div>
