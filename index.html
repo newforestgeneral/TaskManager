@@ -775,14 +775,19 @@
 <div class="main">
   <div class="mobile-header">
     <button class="mobile-menu-btn" id="mobMenuBtn" onclick="toggleMobSidebar()">☰</button>
-    <div style="font-size:15px;font-weight:600;flex:1">Task Tracker</div>
-    <button id="mobVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
-    <div style="display:flex;gap:2px;background:var(--bg-tertiary);border-radius:var(--radius-sm);padding:2px">
+    <div id="mobTopbarTitle" style="font-size:15px;font-weight:600;flex-shrink:0">Task Tracker</div>
+    <div class="search-wrap" style="flex:1;min-width:0">
+      <span class="search-icon">⌕</span>
+      <input class="search-input" id="mobSearchInput" placeholder="Search…" oninput="doSearch(this.value)" />
+    </div>
+    <button id="mobWeatherBtn" onclick="toggleWeatherPanel()" title="Weather forecast" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 5px;line-height:1;border-radius:var(--radius-md);color:var(--text-secondary)">—</button>
+    <div style="display:flex;gap:2px;background:var(--bg-tertiary);border-radius:var(--radius-sm);padding:2px;flex-shrink:0">
       <button id="mobViewBtnList" onclick="switchView('list')" title="List view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:var(--bg-primary);color:var(--text-primary)">☰</button>
       <button id="mobViewBtnCal" onclick="switchView('calendar')" title="Calendar view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:transparent;color:var(--text-secondary)">▦</button>
     </div>
-    <button class="btn-primary manager-only" style="padding:6px 12px;font-size:12px" onclick="openModal()">+ Task</button>
-    <div class="topbar-user" style="position:relative">
+    <button class="btn-primary manager-only" style="padding:6px 10px;font-size:12px;flex-shrink:0" onclick="openModal()">+ Task</button>
+    <button id="mobVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
+    <div class="topbar-user" style="position:relative;flex-shrink:0">
       <button class="topbar-avatar" id="mobAvatar" onclick="toggleUserMenu(event)">?</button>
     </div>
   </div>
@@ -2837,17 +2842,22 @@ async function saveTask(){
 }
 
 // ── FILTERS ──
-function doSearch(val){filter.search=val.trim();render();}
+function doSearch(val){
+  filter.search=val.trim();
+  // keep both search inputs in sync
+  ['searchInput','mobSearchInput'].forEach(id=>{const s=document.getElementById(id);if(s&&s.value!==val)s.value=val;});
+  render();
+}
 
 function updateTopbarTitle(){
-  if(viewMode==='archived'){const tt=document.getElementById('topbarTitle');if(tt)tt.textContent='Archived tasks';return;}
+  if(viewMode==='archived'){['topbarTitle','mobTopbarTitle'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='Archived tasks';});return;}
   let title='All tasks';
   if(filter.search)title=`"${filter.search}"`;
   else if(filter.stage!=='all'&&filter.lineage==='all'&&filter.priority==='all')title=STAGE[filter.stage]?.label||'All tasks';
   else if(filter.lineage!=='all'&&filter.stage==='all'&&filter.priority==='all')title=filter.lineage;
   else if(filter.priority!=='all'&&filter.stage==='all'&&filter.lineage==='all')title=(PRIORITY[filter.priority]?.label||'')+' priority';
   else if(filter.stage!=='all'||filter.lineage!=='all'||filter.priority!=='all')title='Filtered tasks';
-  const ttEl=document.getElementById('topbarTitle');if(ttEl)ttEl.textContent=title;
+  ['topbarTitle','mobTopbarTitle'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=title;});
 }
 
 function dropFilter(type,val){
@@ -3012,7 +3022,7 @@ function resetFilters(){
   ['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{
     document.querySelectorAll(`#sfMenu-${t} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val==='all'));
   });
-  const s=document.getElementById('searchInput');if(s)s.value=filter.search;
+  ['searchInput','mobSearchInput'].forEach(id=>{const s=document.getElementById(id);if(s)s.value=filter.search;});
   render();
 }
 
@@ -3219,10 +3229,10 @@ function fmtWeatherDate(dateStr){
 }
 
 function updateWeatherBtn(){
-  const btn=document.getElementById('weatherBtn');
-  if(!btn)return;
-  if(!weatherForecast||!weatherForecast.length){btn.textContent='🌡';return;}
-  btn.textContent=wmoIcon(weatherForecast[0].code).icon;
+  const icon=(!weatherForecast||!weatherForecast.length)?'🌡':wmoIcon(weatherForecast[0].code).icon;
+  ['weatherBtn','mobWeatherBtn'].forEach(id=>{
+    const btn=document.getElementById(id);if(btn)btn.textContent=icon;
+  });
 }
 
 function toggleWeatherPanel(){
@@ -3237,8 +3247,11 @@ function closeWeatherPanel(){
 }
 document.addEventListener('click',e=>{
   const btn=document.getElementById('weatherBtn');
+  const mobBtn=document.getElementById('mobWeatherBtn');
   const panel=document.getElementById('weatherPanel');
-  if(panel&&btn&&!panel.contains(e.target)&&!btn.contains(e.target)){
+  if(panel&&!panel.contains(e.target)&&
+     (!btn||!btn.contains(e.target))&&
+     (!mobBtn||!mobBtn.contains(e.target))){
     panel.style.display='none';
   }
 });
