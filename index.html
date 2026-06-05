@@ -458,18 +458,26 @@
     /* CALENDAR VIEW */
     .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
     .cal-header-cell{background:var(--bg-secondary);padding:6px 0;text-align:center;font-size:11px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-tertiary);min-width:0}
-    .cal-cell{background:var(--bg-primary);min-height:90px;padding:6px;display:flex;flex-direction:column;gap:3px;vertical-align:top;min-width:0;overflow:hidden}
+    .cal-cell{background:var(--bg-primary);min-height:90px;padding:6px;display:flex;flex-direction:column;gap:3px;vertical-align:top;min-width:0;overflow:visible;position:relative}
     .cal-cell.other-month{background:var(--bg-secondary)}
     .cal-cell.today .cal-day-num{background:var(--accent);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center}
     .cal-day-num{font-size:11px;font-weight:500;color:var(--text-secondary);width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
     .cal-cell.today .cal-day-num{width:18px;height:18px}
-    .cal-task-chip{font-size:11px;padding:2px 6px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;line-height:1.4}
+    .cal-task-chip{font-size:11px;padding:2px 6px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;line-height:1.4;display:block;position:relative;z-index:2;min-height:20px}
+    .cal-task-chip.gantt-start{width:calc(100% + 7px);margin-right:-7px}
+    .cal-task-chip.gantt-mid{width:calc(100% + 14px);margin-left:-7px;margin-right:-7px;padding-left:4px}
+    .cal-task-chip.gantt-end{width:calc(100% + 13px);margin-left:-7px;padding-left:4px}
+    .cal-chip-spacer{height:20px;display:block}
     .cal-task-chip:hover{opacity:0.85}
     .cal-overflow{font-size:10px;color:var(--text-tertiary);padding:1px 4px;cursor:pointer}
     .cal-overflow:hover{color:var(--text-secondary)}
     @media(max-width:768px){
-      .cal-cell{min-height:80px;padding:3px 2px}
-      .cal-task-chip{font-size:9px;padding:1px 3px;border-radius:2px}
+      .cal-cell{min-height:80px;padding:3px 2px;overflow:visible}
+      .cal-task-chip{font-size:9px;padding:1px 3px;border-radius:2px;min-height:16px}
+      .cal-task-chip.gantt-start{width:calc(100% + 3px);margin-right:-3px}
+      .cal-task-chip.gantt-mid{width:calc(100% + 6px);margin-left:-3px;margin-right:-3px;padding-left:2px}
+      .cal-task-chip.gantt-end{width:calc(100% + 5px);margin-left:-3px;padding-left:2px}
+      .cal-chip-spacer{height:16px}
       .cal-day-num{font-size:10px;width:16px;height:16px}
     }
 
@@ -1481,7 +1489,7 @@ function renderList(){
   const buckets={}; // key: date string | 'past' | 'none'
   const bucketOrder=[];
   ft.forEach(t=>{
-    const d=t.dueDate?t.dueDate.slice(0,10):null;
+    const d=(t.startDate||t.dueDate||'').slice(0,10)||null;
     let key;
     if(!d) key='none';
     else if(d<todayStr) key='past';
@@ -1498,7 +1506,7 @@ function renderList(){
 
   function bucketLabel(key){
     if(key==='past')return'Past due';
-    if(key==='none')return'No due date';
+    if(key==='none')return'No date';
     if(key===todayStr){
       const d=new Date(key+'T12:00:00');
       return`Today · ${d.toLocaleDateString('en-CA',{month:'long',day:'numeric'})}`;}
@@ -1666,6 +1674,7 @@ function taskExpandHtml(t){
       </div>
       <div class="expand-actions" style="flex-shrink:0">
         <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update">🎤</button>
+        ${isManager&&viewMode!=='archived'?`<button class="btn-secondary" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();openId='${id}';openModal(true)">✎ Edit</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-primary" style="font-size:12px;padding:5px 10px" onclick="restoreTask()">Restore</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="deleteTaskPermanently()">Delete forever</button>`:''}
       </div>
@@ -1811,7 +1820,7 @@ function open3DayOverview(){
     const d=new Date(ds+'T12:00:00');
     const isToday=ds===todayStr;
     const label=isToday?`Today · ${d.toLocaleDateString('en-CA',{month:'long',day:'numeric'})}`:d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'});
-    const dayTasks=ft.filter(t=>{const td=t.dueDate||t.startDate;return td&&td.slice(0,10)===ds;});
+    const dayTasks=ft.filter(t=>{const td=t.startDate||t.dueDate;return td&&td.slice(0,10)===ds;});
     const wx=weatherForecast?.find(w=>w.date===ds)||(isToday?weatherForecast?.[0]:null);
     const wxSummary=wx?`<span style="margin-left:auto;font-size:12px;color:var(--text-secondary);cursor:pointer;padding:2px 4px;border-radius:4px" onclick="event.stopPropagation();openDayWeatherDetail('${ds}',open3DayOverview)" title="View detailed weather">${wmoIcon(wx.code).icon} ↑${wx.maxTemp}° ↓${wx.minTemp}°${wx.alerts.length?' ⚠':''} ›</span>`:'';
 
@@ -1979,7 +1988,7 @@ function openDayWeatherDetail(ds,backFn=null){
 }
 
 function openCalDayList(ds){
-  const dayTasks=filteredTasks().filter(t=>{const d=t.dueDate||t.startDate;return d&&(typeof d==='string'?d:d).slice(0,10)===ds;});
+  const dayTasks=filteredTasks().filter(t=>{const d=t.startDate||t.dueDate;return d&&(typeof d==='string'?d:d).slice(0,10)===ds;});
   if(!dayTasks.length)return;
   const d=new Date(ds+'T12:00:00');
   const label=d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'});
@@ -3571,7 +3580,6 @@ function renderCalendar(){
   const label=document.getElementById('calMonthLabel');
   const grid=document.getElementById('calGrid');
   if(!label||!grid)return;
-  // Kick off AI name shortening for any uncached tasks (non-blocking)
   fetchShortNames(filteredTasks());
 
   const monthName=new Date(calYear,calMonth,1).toLocaleDateString('en-CA',{month:'long',year:'numeric'});
@@ -3580,70 +3588,103 @@ function renderCalendar(){
   const today=new Date();
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
-  // Build a map: dateStr → tasks (use dueDate; fall back to startDate)
-  const tasksByDate={};
-  const allT=filteredTasks();
-  allT.forEach(t=>{
-    const d=t.dueDate||t.startDate;
-    if(!d)return;
-    const ds=typeof d==='string'?d.slice(0,10):d;
-    if(!tasksByDate[ds])tasksByDate[ds]=[];
-    tasksByDate[ds].push(t);
-  });
+  function getTaskSpan(t){
+    const anchor=t.startDate||t.dueDate;
+    if(!anchor)return null;
+    const startStr=anchor.slice(0,10);
+    const durDays=t.estimatedHours>0?Math.max(1,Math.ceil(t.estimatedHours/8)):1;
+    if(durDays<=1&&!t.startDate)return{start:startStr,end:startStr};
+    const startD=new Date(startStr+'T12:00:00');
+    const endByDur=new Date(startD);
+    endByDur.setDate(endByDur.getDate()+durDays-1);
+    let endStr=endByDur.toISOString().slice(0,10);
+    if(t.dueDate&&t.dueDate.slice(0,10)<endStr)endStr=t.dueDate.slice(0,10);
+    return{start:startStr,end:endStr};
+  }
 
-  // First day of month, pad to Monday start (0=Mon … 6=Sun)
+  const allT=filteredTasks();
+  const taskSpans=[];
+  allT.forEach(t=>{const s=getTaskSpan(t);if(s)taskSpans.push({t,start:s.start,end:s.end});});
+
   const first=new Date(calYear,calMonth,1);
   const last=new Date(calYear,calMonth+1,0);
-  let startPad=first.getDay()-1; // getDay(): 0=Sun,1=Mon…
-  if(startPad<0)startPad=6; // Sunday → 6 padding days
+  let startPad=first.getDay()-1;
+  if(startPad<0)startPad=6;
+
+  const allCells=[];
+  for(let i=0;i<startPad;i++){const d=new Date(calYear,calMonth,1-startPad+i);allCells.push({ds:d.toISOString().slice(0,10),inMonth:false,dayNum:d.getDate()});}
+  for(let d=1;d<=last.getDate();d++){const ds=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;allCells.push({ds,inMonth:true,dayNum:d});}
+  const endPad=(7-allCells.length%7)%7;
+  for(let i=1;i<=endPad;i++){const d=new Date(calYear,calMonth+1,i);allCells.push({ds:d.toISOString().slice(0,10),inMonth:false,dayNum:i});}
+
+  function getLanesForWeek(weekDates){
+    const ws=weekDates[0],we=weekDates[6];
+    const wt=taskSpans.filter(s=>s.start<=we&&s.end>=ws);
+    wt.sort((a,b)=>a.start<b.start?-1:a.start>b.start?1:0);
+    const lanes=[];
+    wt.forEach(item=>{
+      const cs=item.start<ws?ws:item.start,ce=item.end>we?we:item.end;
+      let li=lanes.findIndex(lane=>!lane.some(ex=>{const es=ex.start<ws?ws:ex.start,ee=ex.end>we?we:ex.end;return es<=ce&&ee>=cs;}));
+      if(li===-1){li=lanes.length;lanes.push([]);}
+      lanes[li].push(item);
+    });
+    return lanes;
+  }
+
+  function chipHtmlForItem(item,ds,weekDates,bgColor,fgColor){
+    const{t}=item;
+    const isSolo=item.start===item.end;
+    const isSpanStart=ds===item.start,isSpanEnd=ds===item.end;
+    const isWeekStart=ds===weekDates[0],isWeekEnd=ds===weekDates[6];
+    let br,gcls;
+    if(isSolo){br='3px';gcls='';}
+    else if((isSpanStart||isWeekStart)&&(isSpanEnd||isWeekEnd)){br='3px';gcls='';}
+    else if(isSpanStart||isWeekStart){br='3px 0 0 3px';gcls=' gantt-start';}
+    else if(isSpanEnd||isWeekEnd){br='0 3px 3px 0';gcls=' gantt-end';}
+    else{br='0';gcls=' gantt-mid';}
+    const showName=isSolo||isSpanStart||isWeekStart;
+    return`<div class="cal-task-chip${gcls}" style="background:${bgColor};color:${fgColor};border-radius:${br}" onclick="openCalDetail('${t.id}')" title="${escHtml(t.name)}">${showName?escHtml(calShortName(t)):''}</div>`;
+  }
 
   const DAY_HEADERS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let html=`<div class="cal-grid">`;
   DAY_HEADERS.forEach(d=>{html+=`<div class="cal-header-cell">${d}</div>`;});
 
-  // Pad before
-  for(let i=0;i<startPad;i++){
-    const prevDate=new Date(calYear,calMonth,1-startPad+i);
-    html+=`<div class="cal-cell other-month"><div class="cal-day-num">${prevDate.getDate()}</div></div>`;
-  }
+  const MAX_SHOW=3;
+  const numWeeks=allCells.length/7;
 
-  // Days of month
-  for(let d=1;d<=last.getDate();d++){
-    const ds=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const isToday=ds===todayStr;
-    const dayTasks=tasksByDate[ds]||[];
-    const MAX_SHOW=3;
-    const shown=dayTasks.slice(0,MAX_SHOW);
-    const overflow=dayTasks.length-MAX_SHOW;
+  for(let w=0;w<numWeeks;w++){
+    const week=allCells.slice(w*7,(w+1)*7);
+    const weekDates=week.map(c=>c.ds);
+    const lanes=getLanesForWeek(weekDates);
+    const shownLanes=lanes.slice(0,MAX_SHOW);
+    const overflowLanes=lanes.slice(MAX_SHOW);
 
-    const chips=shown.map(t=>{
-      const c=chipColors(t.lineage||'');
-      const od=t.stage!=='complete'&&t.dueDate&&t.dueDate.slice(0,10)<todayStr;
-      const bgColor=od?'#FEE2E2':c.bg;
-      const fgColor=od?'#991B1B':c.fg;
-      return`<div class="cal-task-chip" style="background:${bgColor};color:${fgColor}" onclick="openCalDetail('${t.id}')" title="${escHtml(t.name)}">${escHtml(calShortName(t))}</div>`;
-    }).join('');
+    week.forEach(({ds,inMonth,dayNum})=>{
+      const wxDay=weatherForecast?(weatherForecast.find(w=>w.date===ds)||(ds===todayStr?weatherForecast[0]:null)):null;
+      const daysAhead=(new Date(ds+'T12:00:00')-new Date(todayStr+'T12:00:00'))/(86400000);
+      const wxHtml=wxDay&&ds>=todayStr&&daysAhead<=14
+        ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(' · '):wmoIcon(wxDay.code).label}" style="font-size:13px;line-height:1;cursor:pointer;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();openDayWeatherDetail('${ds}')">${wmoIcon(wxDay.code).icon}</span>`:'';
 
-    const overflowHtml=overflow>0?`<div class="cal-overflow" style="cursor:pointer" onclick="openCalDayList('${ds}')">+${overflow} more</div>`:'';
+      let chips='';
+      shownLanes.forEach(lane=>{
+        const item=lane.find(s=>ds>=s.start&&ds<=s.end);
+        if(!item){chips+=`<div class="cal-chip-spacer"></div>`;return;}
+        const{t}=item;
+        const c=chipColors(t.lineage||'');
+        const od=t.stage!=='complete'&&t.dueDate&&t.dueDate.slice(0,10)<todayStr;
+        chips+=chipHtmlForItem(item,ds,weekDates,od?'#FEE2E2':c.bg,od?'#991B1B':c.fg);
+      });
 
-    // Weather icon for this day (only future days within forecast range)
-    const wxDay=weatherForecast?(weatherForecast.find(w=>w.date===ds)||(ds===todayStr?weatherForecast[0]:null)):null;
-    const daysAhead=(new Date(ds+'T12:00:00')-new Date(todayStr+'T12:00:00'))/(86400000);
-    const wxHtml=wxDay&&ds>=todayStr&&daysAhead<=14
-      ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(' · '):wmoIcon(wxDay.code).label}" style="font-size:13px;line-height:1;cursor:pointer;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();openDayWeatherDetail('${ds}')">${wmoIcon(wxDay.code).icon}</span>`
-      :'';
+      const overflowCount=overflowLanes.reduce((n,lane)=>n+(lane.some(s=>ds>=s.start&&ds<=s.end)?1:0),0);
+      if(overflowCount>0)chips+=`<div class="cal-overflow" onclick="openCalDayList('${ds}')">+${overflowCount} more</div>`;
 
-    html+=`<div class="cal-cell${isToday?' today':''}">
-      <div style="display:flex;align-items:center;gap:2px">${wxHtml?`<div class="cal-day-num" style="cursor:pointer" onclick="openDayOverview('${ds}')">${d}</div>${wxHtml}`:`<div class="cal-day-num" style="cursor:pointer" onclick="openDayOverview('${ds}')">${d}</div>`}</div>
-      ${chips}${overflowHtml}
-    </div>`;
-  }
-
-  // Pad after to complete the grid row
-  const totalCells=startPad+last.getDate();
-  const endPad=(7-totalCells%7)%7;
-  for(let i=1;i<=endPad;i++){
-    html+=`<div class="cal-cell other-month"><div class="cal-day-num">${i}</div></div>`;
+      const cellCls=`cal-cell${inMonth?'':' other-month'}${ds===todayStr?' today':''}`;
+      html+=`<div class="${cellCls}">
+        <div style="display:flex;align-items:center;gap:2px"><div class="cal-day-num" style="cursor:pointer" onclick="openDayOverview('${ds}')">${dayNum}</div>${wxHtml}</div>
+        ${chips}
+      </div>`;
+    });
   }
 
   html+=`</div>`;
