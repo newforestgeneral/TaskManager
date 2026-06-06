@@ -573,13 +573,8 @@
     .login-pw-toggle:hover{color:var(--text-secondary)}
     .login-divider{border:none;border-top:0.5px solid var(--border);margin:20px 0 0}
 
-    /* WORKER MODE */
-    body.worker-mode .sidebar{display:none}
-    body.worker-mode #filterBar{display:none!important}
-    body.worker-mode #filterToggleBtn{display:none}
-    body.worker-mode .er-check{display:none}
-    body.worker-mode #bulkBar{display:none!important}
-    body.worker-mode .mobile-header .mobile-menu-btn{display:none}
+    /* WORKER MODE — archive actions hidden only */
+    body.worker-mode .archive-only{display:none!important}
 
 .worker-hero{display:none;background:var(--bg-primary);padding:10px 20px;
       border-bottom:0.5px solid var(--border);flex-shrink:0}
@@ -797,7 +792,7 @@
       <button id="mobViewBtnList" onclick="switchView('list')" title="List view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:var(--bg-primary);color:var(--text-primary)">☰</button>
       <button id="mobViewBtnCal" onclick="switchView('calendar')" title="Calendar view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:transparent;color:var(--text-secondary)">▦</button>
     </div>
-    <button class="btn-primary manager-only" style="padding:6px 10px;font-size:12px;flex-shrink:0" onclick="openModal()">+ Task</button>
+    <button class="btn-primary" style="padding:6px 10px;font-size:12px;flex-shrink:0" onclick="openModal()">+ Task</button>
     <button id="mobVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
     <div class="topbar-user" style="position:relative;flex-shrink:0;margin-left:auto">
       <button class="topbar-avatar" id="mobAvatar" onclick="toggleUserMenu(event)">?</button>
@@ -815,7 +810,7 @@
       <button id="viewBtnList" onclick="switchView('list')" title="List view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:var(--bg-primary);color:var(--text-primary)">☰</button>
       <button id="viewBtnCal" onclick="switchView('calendar')" title="Calendar view" style="border:none;cursor:pointer;padding:4px 8px;border-radius:4px;font-size:13px;background:transparent;color:var(--text-secondary)">▦</button>
     </div>
-    <button class="btn-primary manager-only" onclick="openModal()">+ New task</button>
+    <button class="btn-primary" onclick="openModal()">+ New task</button>
     <button id="globalVoiceBtn" class="btn-voice" onclick="toggleVoice()" title="Voice input">🎤</button>
     <div class="topbar-user" id="topbarUserWrap" style="margin-left:auto">
       <button class="topbar-avatar" id="topbarAvatar" onclick="toggleUserMenu(event)">?</button>
@@ -1026,8 +1021,8 @@
       </div>
 
       <!-- RECURRENCE -->
-      <div class="form-section-label manager-only">Recurrence</div>
-      <div class="manager-only">
+      <div class="form-section-label">Recurrence</div>
+      <div>
         <div class="form-group" style="margin-top:0">
           <label class="form-label">Repeat</label>
           <select class="form-select" id="fRecurrenceType" onchange="toggleRecurrenceFields()">
@@ -1271,7 +1266,9 @@ async function onSignedIn(user){
 
 function applyRoleUI(){
   const isManager=currentRole==='manager';
+  // manager-only = Team section, workspace management — hidden from workers
   document.querySelectorAll('.manager-only').forEach(el=>el.style.display=isManager?'':'none');
+  // archive-only = archive/restore/delete actions — also hidden from workers via CSS class
   document.body.classList.toggle('worker-mode',!isManager);
   const name=currentProfile?.name||currentUser?.email||'User';
   const av=document.getElementById('sidebarAvatar');
@@ -1536,7 +1533,7 @@ function renderList(){
         <div class="er-right">
           ${wxBadge}
           <button onclick="event.stopPropagation();openId='${t.id}';openModal(true)" style="background:none;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:3px 8px;font-size:11px;cursor:pointer;color:var(--text-secondary);white-space:nowrap" title="Edit task">✎ Edit</button>
-          <button class="btn-secondary delete-btn" onclick="event.stopPropagation();archiveTaskById('${t.id}')" style="font-size:11px;padding:3px 8px;white-space:nowrap" title="Archive task">Archive</button>
+          <button class="btn-secondary delete-btn archive-only" onclick="event.stopPropagation();archiveTaskById('${t.id}')" style="font-size:11px;padding:3px 8px;white-space:nowrap" title="Archive task">Archive</button>
         </div>
       </div>
       <div class="email-expand${isOpen?'':' hidden'}" id="exp-${t.id}">
@@ -1675,7 +1672,7 @@ function taskExpandHtml(t){
       </div>
       <div class="expand-actions" style="flex-shrink:0">
         <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update">🎤</button>
-        ${isManager&&viewMode!=='archived'?`<button class="btn-secondary" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();openId='${id}';openModal(true)">✎ Edit</button>`:''}
+        ${viewMode!=='archived'?`<button class="btn-secondary" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();openId='${id}';openModal(true)">✎ Edit</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-primary" style="font-size:12px;padding:5px 10px" onclick="restoreTask()">Restore</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="deleteTaskPermanently()">Delete forever</button>`:''}
       </div>
@@ -3109,9 +3106,9 @@ function toggleMobSidebar(){document.getElementById('sidebar').classList.contain
 
 
 // ── WEATHER ──
-const WEATHER_LAT=43.9196,WEATHER_LON=-80.0940;
-const WX_CACHE_KEY='tt_wx_gem';
-const WEATHER_TTL=2*60*60*1000; // 2 hours (GEM runs 4x/day)
+const WEATHER_LAT=44.00938,WEATHER_LON=-80.0336;
+const WX_CACHE_KEY='tt_wx_forecast';
+const WEATHER_TTL=2*60*60*1000;
 const OUTDOOR_ALWAYS=new Set(['Land & Forest','Farm & Garden','Site Infrastructure']);
 const OUTDOOR_CONDITIONAL=new Set(['Building Improvements','Other Building']);
 
@@ -3154,7 +3151,6 @@ async function fetchWeather(){
   try{
     const url='https://api.open-meteo.com/v1/forecast'
       +'?latitude='+WEATHER_LAT+'&longitude='+WEATHER_LON
-      +'&models=gem_seamless'
       +'&hourly=temperature_2m,precipitation,snowfall,windspeed_10m,weathercode'
       +'&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,weathercode,sunrise,sunset'
       +'&timezone=America%2FToronto&forecast_days=14';
