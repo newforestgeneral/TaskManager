@@ -1399,10 +1399,6 @@ function render(){
 }
 
 function visibleTasks(){
-  if(currentRole==='worker'&&currentProfile?.name){
-    const n=currentProfile.name.toLowerCase();
-    return tasks.filter(t=>t.assignees.some(a=>a.toLowerCase()===n));
-  }
   return tasks;
 }
 function updateWorkerHero(){
@@ -3043,9 +3039,7 @@ function updateBadges(){
   const priCnt={urgent:0,high:0,medium:0,low:0};
   const linCnt={};
   // Always count from active tasks so sidebar badges stay meaningful in archived mode
-  const bt=currentRole==='worker'&&currentProfile?.name
-    ?activeTasks.filter(t=>t.assignees.some(a=>a.toLowerCase()===currentProfile.name.toLowerCase()))
-    :activeTasks;
+  const bt=activeTasks;
   bt.forEach(t=>{
     if(cnt[t.stage]!==undefined)cnt[t.stage]++;
     if(priCnt[t.priority]!==undefined)priCnt[t.priority]++;
