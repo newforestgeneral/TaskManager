@@ -1313,6 +1313,7 @@ async function loadData(){
   const{data,error}=await sb.from('tasks').select('*, task_updates(*)')
     .eq('workspace_id',wsId).eq('archived',isArchived).order('created_at',{ascending:true});
   if(error){console.error('loadData:',error);return;}
+  console.log('loadData: DB returned',data?.length,'tasks');
   tasks=(data||[]).map(fromDb);
   if(isArchived){
     const{data:ad}=await sb.from('tasks').select('id,stage,priority,lineage,assignees')
