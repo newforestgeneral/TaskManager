@@ -83,6 +83,14 @@
       cursor:pointer;color:var(--text-secondary);user-select:none}
     .sf-row:hover{background:var(--bg-secondary);color:var(--text-primary)}
     .sf-row.active{background:var(--bg-tertiary);color:var(--text-primary);font-weight:500}
+    .sf-row-chev{margin-left:auto;font-size:10px;transition:transform .15s;opacity:.5}
+    .sf-row-chev.open{transform:rotate(-180deg)}
+    .sf-sub-rows{display:none}
+    .sf-sub-rows.open{display:block}
+    .sf-sub-row{display:flex;align-items:center;gap:8px;padding:5px 10px 5px 24px;font-size:12px;
+      cursor:pointer;color:var(--text-secondary);user-select:none}
+    .sf-sub-row:hover{background:var(--bg-secondary);color:var(--text-primary)}
+    .sf-sub-row.active{background:var(--bg-tertiary);color:var(--text-primary);font-weight:500}
     .sidebar-user{padding:11px 14px;border-top:0.5px solid var(--border);
       display:flex;align-items:center;gap:10px;cursor:pointer}
     .sidebar-user:hover{background:var(--bg-secondary)}
@@ -694,16 +702,6 @@
           <span class="sf-chev">▾</span>
         </button>
         <div class="sf-menu" id="sfMenu-lineage">
-          <div class="sf-row active" data-val="all" onclick="sfFilter('lineage','all')"><span style="color:var(--text-tertiary)">◈</span> All lineages <span class="nav-badge" id="nb-l-all">0</span></div>
-          <div class="sf-row" data-val="Land & Forest" onclick="sfFilter('lineage','Land \x26 Forest')"><span style="color:var(--text-tertiary)">◈</span> Land &amp; Forest <span class="nav-badge" id="nb-l-Land">0</span></div>
-          <div class="sf-row" data-val="Farm & Garden" onclick="sfFilter('lineage','Farm \x26 Garden')"><span style="color:var(--text-tertiary)">◈</span> Farm &amp; Garden <span class="nav-badge" id="nb-l-Farm">0</span></div>
-          <div class="sf-row" data-val="Building Improvements" onclick="sfFilter('lineage','Building Improvements')"><span style="color:var(--text-tertiary)">◈</span> Building Improvements <span class="nav-badge" id="nb-l-BldImpr">0</span></div>
-          <div class="sf-row" data-val="Other Building" onclick="sfFilter('lineage','Other Building')"><span style="color:var(--text-tertiary)">◈</span> Other Building <span class="nav-badge" id="nb-l-OtherBld">0</span></div>
-          <div class="sf-row" data-val="Site Infrastructure" onclick="sfFilter('lineage','Site Infrastructure')"><span style="color:var(--text-tertiary)">◈</span> Site Infrastructure <span class="nav-badge" id="nb-l-SiteInfra">0</span></div>
-          <div class="sf-row" data-val="Housekeeping" onclick="sfFilter('lineage','Housekeeping')"><span style="color:var(--text-tertiary)">◈</span> Housekeeping <span class="nav-badge" id="nb-l-House">0</span></div>
-          <div class="sf-row" data-val="Kitchen" onclick="sfFilter('lineage','Kitchen')"><span style="color:var(--text-tertiary)">◈</span> Kitchen <span class="nav-badge" id="nb-l-Kitchen">0</span></div>
-          <div class="sf-row" data-val="Dining" onclick="sfFilter('lineage','Dining')"><span style="color:var(--text-tertiary)">◈</span> Dining <span class="nav-badge" id="nb-l-Dining">0</span></div>
-          <div class="sf-row" data-val="Administration" onclick="sfFilter('lineage','Administration')"><span style="color:var(--text-tertiary)">◈</span> Administration <span class="nav-badge" id="nb-l-Admin">0</span></div>
         </div>
       </div>
       <!-- Due date dropdown -->
@@ -840,6 +838,7 @@
       <option value="all">All lineages</option>
       <option>Land &amp; Forest</option><option>Farm &amp; Garden</option>
       <option>Building Improvements</option><option>Other Building</option>
+      <option>Outdoor Spaces</option>
       <option>Site Infrastructure</option><option>Housekeeping</option>
       <option>Kitchen</option><option>Dining</option><option>Administration</option>
     </select>
@@ -909,12 +908,19 @@
         </div>
         <div class="form-group">
           <label class="form-label">Lineage (Department)</label>
-          <select class="form-select" id="fLineage">
+          <select class="form-select" id="fLineage" onchange="updateSubLineageSelect()">
             <option value="">— Select —</option>
             <option>Land &amp; Forest</option><option>Farm &amp; Garden</option>
             <option>Building Improvements</option><option>Other Building</option>
+            <option>Outdoor Spaces</option>
             <option>Site Infrastructure</option><option>Housekeeping</option>
             <option>Kitchen</option><option>Dining</option><option>Administration</option>
+          </select>
+        </div>
+        <div class="form-group" id="fSubLineageGroup" style="display:none">
+          <label class="form-label">Sub-location</label>
+          <select class="form-select" id="fSubLineage">
+            <option value="">— Select —</option>
           </select>
         </div>
       </div>
@@ -1145,8 +1151,35 @@ const AV_COLS=[
 const WORKER_STAGES=['posted','inprogress','review','complete'];
 const WORKER_ACTIVE_STAGES=['posted','inprogress','review'];
 
+// Sub-lineages: parent lineage → array of {value, label} sub-items
+const SUB_LINEAGES={
+  'Other Building':[
+    {value:'Chalet',                        label:'Chalet'},
+    {value:'Workshop',                      label:'Workshop'},
+    {value:'Upper Electrical Service Shed', label:'Upper Electrical Service Shed (U.E.S.S.) / Upper Building / Reception Building'},
+    {value:'Main Electrical Service Shed',  label:'Main Electrical Service Shed (M.E.S.S) / Main Electrical Building'},
+    {value:'Pavilion',                      label:'Pavilion'},
+    {value:'House Garage',                  label:'House Garage'},
+    {value:'Community House',               label:'Community House'}
+  ],
+  'Building Improvements':[
+    {value:'Main Commercial Building', label:'Main Commercial Building / MCB / Main Building'},
+    {value:'Barn',                     label:'Barn / Barn Conference Building'},
+    {value:'Pool Building',            label:'Pool Building / Barn Pool / Indoor Pool'},
+    {value:'House',                    label:'House / Dwelling / Retreat House'}
+  ],
+  'Outdoor Spaces':[
+    {value:'Cabin',                   label:'Cabin'},
+    {value:'Tent Village A',          label:'Tent Village A / Glamping Tents / Paddock Area'},
+    {value:'Tent Village B',          label:'Tent Village B / Orchard Area / Campground'},
+    {value:'Landscaping Construction',label:'Landscaping Construction'},
+    {value:'Retaining Walls',         label:'Retaining Walls'},
+    {value:'Seeding Planting',        label:'Seeding Planting'}
+  ]
+};
+
 let tasks=[],openId=null,editId=null,currentView='list';
-let filter={stage:'all',lineage:'all',assignee:'all',priority:'all',weatherDependent:'all',dueDate:'all',search:''};
+let filter={stage:'all',lineage:'all',subLineage:'all',assignee:'all',priority:'all',weatherDependent:'all',dueDate:'all',search:''};
 let currentUser=null,currentRole='worker',currentProfile=null,allProfiles=[];
 let workspaces=[],currentWorkspace=null;
 let viewMode='active'; // 'active' | 'archived'
@@ -1180,7 +1213,7 @@ function fromDb(row){
     location:row.location||'',suggestedSchedule:row.suggested_schedule||'',
     weatherDependent:row.weather_dependent||'no',weatherNote:row.weather_note||'',
     steps:row.steps||[],materials:row.materials||[],tools:row.tools||[],
-    taskNotes:row.task_notes||'',createdAt:row.created_at,
+    taskNotes:row.task_notes||'',subLineage:row.sub_lineage||'',createdAt:row.created_at,
     recurrenceType:row.recurrence_type||null,
     recurrenceInterval:row.recurrence_interval||1,
     recurrenceEndDate:row.recurrence_end_date||'',
@@ -1199,6 +1232,7 @@ function toDb(data){
     location:data.location||null,suggested_schedule:data.suggestedSchedule||null,
     weather_dependent:data.weatherDependent||'no',weather_note:data.weatherNote||null,
     steps:data.steps,materials:data.materials,tools:data.tools,task_notes:data.taskNotes||null,
+    sub_lineage:data.subLineage||null,
     recurrence_type:data.recurrenceType||null,
     recurrence_interval:data.recurrenceInterval||1,
     recurrence_end_date:data.recurrenceEndDate||null,
@@ -1272,6 +1306,7 @@ async function onSignedIn(user){
   await Promise.all([loadWorkspaces(),loadProfiles()]);
   fetchWeather(); // non-blocking, updates UI when ready
   setupPush();   // non-blocking, registers service worker + restores subscription state
+  buildLineageFilter();
   await loadData();
   setupRealtime();
 }
@@ -1398,7 +1433,7 @@ async function switchWorkspace(ws){
   closeWorkspacePicker();
   renderWorkspaceSwitcher();
   viewMode='active';
-  filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
+  filter={stage:'all',lineage:'all',subLineage:'all',assignee:'all',priority:'all',search:''};
   weatherBannerDismissed=false;
   await loadData();
 }
@@ -1429,6 +1464,7 @@ function filteredTasks(){
   return visibleTasks().filter(t=>{
     if(filter.stage!=='all'&&t.stage!==filter.stage)return false;
     if(filter.lineage!=='all'&&t.lineage!==filter.lineage)return false;
+    if(filter.subLineage!=='all'&&(t.subLineage||'')!==filter.subLineage)return false;
     if(filter.assignee!=='all'&&!t.assignees.includes(filter.assignee))return false;
     if(filter.priority!=='all'&&t.priority!==filter.priority)return false;
     if(filter.weatherDependent!=='all'){
@@ -1674,7 +1710,7 @@ function taskExpandHtml(t){
     <div class="expand-header" style="flex-wrap:wrap;gap:8px">
       <div style="min-width:0;flex:1 1 180px">
         <div class="expand-title" style="word-break:break-word">${escHtml(t.name)}</div>
-        <div class="expand-sub">${[t.assignees.length?t.assignees[0]:null,t.lineage,t.project].filter(Boolean).map(escHtml).join(' · ')}</div>
+        <div class="expand-sub">${[t.assignees.length?t.assignees[0]:null,lineageLabel(t)||null,t.project].filter(Boolean).map(escHtml).join(' · ')}</div>
       </div>
       <div class="expand-actions" style="flex-shrink:0">
         <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update">🎤</button>
@@ -1695,6 +1731,7 @@ function taskExpandHtml(t){
     ${t.description?`<div class="panel-section"><div class="sec-label" style="margin-bottom:4px">Description</div><div style="font-size:12px;color:var(--text-secondary);line-height:1.6">${escHtml(t.description)}</div></div>`:''}
     <div class="panel-section">
       <div class="field-grid-2">
+        ${lineageLabel(t)?`<div class="frl">Lineage</div><div class="frv">${escHtml(lineageLabel(t))}</div>`:''}
         ${t.estimatedHours?`<div class="frl">Budget hrs</div><div class="frv">${t.estimatedHours} hrs</div>`:''}
         ${t.hrsCompleted?`<div class="frl">Hrs completed</div><div class="frv">${t.hrsCompleted} hrs</div>`:''}
         <div class="frl">% complete</div><div class="frv">${pctRow}</div>
@@ -1911,7 +1948,7 @@ function openDayOverview(ds,backFn=null){
       <span style="width:8px;height:8px;border-radius:50%;background:${od?'#E24B4A':c.bg};flex-shrink:0"></span>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.name)}</div>
-        <div style="font-size:11px;color:var(--text-tertiary);margin-top:1px">${t.lineage?escHtml(t.lineage)+' · ':''}${sm?.label||t.stage}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);margin-top:1px">${lineageLabel(t)?escHtml(lineageLabel(t))+' · ':''}${sm?.label||t.stage}</div>
       </div>
       <span style="font-size:10px;padding:2px 6px;border-radius:6px;background:var(--bg-tertiary);color:var(--text-tertiary);flex-shrink:0">${badge}</span>
     </div>`;
@@ -2642,6 +2679,7 @@ function openModal(editing){
     document.getElementById('fProject').value=t.project||'';
     document.getElementById('fStage').value=t.stage;
     document.getElementById('fLineage').value=t.lineage||'';
+    updateSubLineageSelect(t.subLineage||'');
     document.getElementById('fPriority').value=t.priority||'medium';
     document.getElementById('fResources').value=t.humanResources||'';
     document.getElementById('fWeather').value=t.weatherDependent||'no';
@@ -2674,6 +2712,7 @@ function openModal(editing){
     populateAssigneePicker([]);
     document.getElementById('fStage').value='created';
     document.getElementById('fLineage').value='';
+    updateSubLineageSelect();
     document.getElementById('fPriority').value='medium';
     document.getElementById('fResources').value='';
     document.getElementById('fWeather').value='no';
@@ -2693,6 +2732,21 @@ function openModal(editing){
 }
 function openModalStage(stage){openModal(false);document.getElementById('fStage').value=stage;}
 function closeModal(){document.getElementById('modalOverlay').classList.add('hidden');editId=null;}
+function updateSubLineageSelect(preserveVal){
+  const lineage=document.getElementById('fLineage').value;
+  const subs=SUB_LINEAGES[lineage]||[];
+  const grp=document.getElementById('fSubLineageGroup');
+  const sel=document.getElementById('fSubLineage');
+  if(subs.length){
+    sel.innerHTML='<option value="">— Select —</option>'+subs.map(s=>`<option value="${s.value}">${s.label}</option>`).join('');
+    if(preserveVal)sel.value=preserveVal;
+    grp.style.display='block';
+  } else {
+    sel.innerHTML='<option value="">— Select —</option>';
+    sel.value='';
+    grp.style.display='none';
+  }
+}
 
 // ── RECURRENCE ──
 function calcNextDate(startDate,type,interval){
@@ -2800,6 +2854,7 @@ async function saveTask(){
     creatorName:document.getElementById('fCreator').value.trim()||currentProfile?.name||'',
     project:document.getElementById('fProject').value.trim(),
     stage:document.getElementById('fStage').value,lineage:document.getElementById('fLineage').value,
+    subLineage:document.getElementById('fSubLineage').value||'',
     priority:document.getElementById('fPriority').value,
     humanResources:parseInt(document.getElementById('fResources').value)||0,
     weatherDependent:document.getElementById('fWeather').value,
@@ -2888,7 +2943,7 @@ function switchViewMode(mode){
   if(mode==='archived'){
     document.getElementById('snArchived')?.classList.add('active');
   } else {
-    filter={stage:'all',lineage:'all',assignee:'all',priority:'all',search:''};
+    filter={stage:'all',lineage:'all',subLineage:'all',assignee:'all',priority:'all',search:''};
     // Reset all sf-row active states to 'all'
     ['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{
       document.querySelectorAll(`#sfMenu-${t} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val==='all'));
@@ -2919,10 +2974,51 @@ document.addEventListener('click',e=>{
   }
 },true);
 
+function buildLineageFilter(){
+  const ALL_LINEAGES=['Land & Forest','Farm & Garden','Building Improvements','Other Building',
+    'Outdoor Spaces','Site Infrastructure','Housekeeping','Kitchen','Dining','Administration'];
+  const menu=document.getElementById('sfMenu-lineage');
+  if(!menu)return;
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/'/g,'&#39;');
+  let html=`<div class="sf-row active" data-val="all" onclick="sfFilter('lineage','all')"><span style="color:var(--text-tertiary)">◈</span> All lineages <span class="nav-badge" id="nb-l-all">0</span></div>`;
+  ALL_LINEAGES.forEach(lin=>{
+    const subs=SUB_LINEAGES[lin]||[];
+    const chevron=subs.length?`<span class="sf-row-chev" id="sfLinChev-${esc(lin)}" onclick="toggleLinSubs(event,'${esc(lin)}')">▾</span>`:'';
+    html+=`<div class="sf-row" data-val="${esc(lin)}" data-lin="${esc(lin)}" onclick="sfFilter('lineage','${esc(lin)}')"><span style="color:var(--text-tertiary)">◈</span> ${esc(lin)} <span class="nav-badge">0</span>${chevron}</div>`;
+    if(subs.length){
+      html+=`<div class="sf-sub-rows" id="sfSubRows-${esc(lin)}">`;
+      subs.forEach(s=>{
+        html+=`<div class="sf-sub-row" data-sub="${esc(s.value)}" onclick="sfFilterSub('${esc(lin)}','${esc(s.value)}')">· ${esc(s.label)} <span class="nav-badge">0</span></div>`;
+      });
+      html+=`</div>`;
+    }
+  });
+  menu.innerHTML=html;
+}
+function toggleLinSubs(e,lin){
+  e.stopPropagation();
+  const rows=document.getElementById('sfSubRows-'+lin);
+  const chev=document.getElementById('sfLinChev-'+lin);
+  if(rows){rows.classList.toggle('open');chev?.classList.toggle('open');}
+}
+function sfFilterSub(lin,sub){
+  if(viewMode==='archived'){switchViewMode('active');return;}
+  filter.lineage=lin;
+  filter.subLineage=sub;
+  // Update active states
+  document.querySelectorAll('#sfMenu-lineage .sf-row').forEach(r=>r.classList.toggle('active',r.dataset.lin===lin));
+  document.querySelectorAll('#sfMenu-lineage .sf-sub-row').forEach(r=>r.classList.toggle('active',r.dataset.sub===sub));
+  document.getElementById('sfMenu-lineage')?.classList.remove('open');
+  document.getElementById('sfBtn-lineage')?.classList.remove('open');
+  sfOpen=null;
+  render();
+}
 function sfFilter(type,val){
   if(viewMode==='archived'){switchViewMode('active');return;}
   filter[type]=val;
+  if(type==='lineage')filter.subLineage='all'; // clear sub when changing parent
   document.querySelectorAll(`#sfMenu-${type} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val===val));
+  if(type==='lineage')document.querySelectorAll('#sfMenu-lineage .sf-sub-row').forEach(r=>r.classList.remove('active'));
   // Close dropdown
   document.getElementById('sfMenu-'+type)?.classList.remove('open');
   document.getElementById('sfBtn-'+type)?.classList.remove('open');
@@ -2961,13 +3057,16 @@ function updateSfBtns(bt){
   }
   // Lineage
   const lv=filter.lineage||'all';
-  const lvLabel=lv==='all'?'All lineages':lv;
-  const linCountEl=document.querySelector(`#sfMenu-lineage .sf-row[data-val="${lv}"] .nav-badge`);
+  const slv=filter.subLineage||'all';
+  const lvLabel=lv==='all'?'All lineages':(slv!=='all'?slv:lv);
+  const linCountEl=slv!=='all'
+    ?document.querySelector(`#sfMenu-lineage .sf-sub-row[data-sub="${slv}"] .nav-badge`)
+    :document.querySelector(`#sfMenu-lineage .sf-row[data-lin="${lv}"] .nav-badge`);
   const sfLin=document.getElementById('sfBtn-lineage');
   if(sfLin){
     document.getElementById('sfLabel-lineage').textContent=lvLabel.length>17?lvLabel.slice(0,15)+'…':lvLabel;
     document.getElementById('sfCount-lineage').textContent=linCountEl?.textContent||'0';
-    sfLin.classList.toggle('filtered',lv!=='all');
+    sfLin.classList.toggle('filtered',lv!=='all'||slv!=='all');
   }
   // Assignee
   const av=filter.assignee||'all';
@@ -3023,13 +3122,13 @@ function updateSfBtns(bt){
     sfDd.classList.toggle('filtered',dv!=='all');
   }
   // Reset button visibility
-  const anyFiltered=filter.stage!=='all'||filter.lineage!=='all'||filter.assignee!=='all'||filter.priority!=='all'||filter.weatherDependent!=='all'||filter.dueDate!=='all';
+  const anyFiltered=filter.stage!=='all'||filter.lineage!=='all'||filter.subLineage!=='all'||filter.assignee!=='all'||filter.priority!=='all'||filter.weatherDependent!=='all'||filter.dueDate!=='all';
   const resetBtn=document.getElementById('resetFiltersBtn');
   if(resetBtn)resetBtn.style.display=anyFiltered?'block':'none';
 }
 
 function resetFilters(){
-  filter={stage:'all',lineage:'all',assignee:'all',priority:'all',weatherDependent:'all',dueDate:'all',search:filter.search};
+  filter={stage:'all',lineage:'all',subLineage:'all',assignee:'all',priority:'all',weatherDependent:'all',dueDate:'all',search:filter.search};
   ['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{
     document.querySelectorAll(`#sfMenu-${t} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val==='all'));
   });
@@ -3064,11 +3163,18 @@ function updateBadges(){
   document.getElementById('nb-p-high').textContent=priCnt.high;
   document.getElementById('nb-p-medium').textContent=priCnt.medium;
   document.getElementById('nb-p-low').textContent=priCnt.low;
-  document.getElementById('nb-l-all').textContent=bt.length;
-  const linMap={'Land & Forest':'nb-l-Land','Farm & Garden':'nb-l-Farm','Building Improvements':'nb-l-BldImpr',
-    'Other Building':'nb-l-OtherBld','Site Infrastructure':'nb-l-SiteInfra','Housekeeping':'nb-l-House',
-    'Kitchen':'nb-l-Kitchen','Dining':'nb-l-Dining','Administration':'nb-l-Admin'};
-  Object.entries(linMap).forEach(([lin,id])=>{const el=document.getElementById(id);if(el)el.textContent=linCnt[lin]||0;});
+  const nbLAll=document.getElementById('nb-l-all');if(nbLAll)nbLAll.textContent=bt.length;
+  // Sub-lineage counts
+  const subLinCnt={};
+  bt.forEach(t=>{if(t.subLineage)subLinCnt[t.subLineage]=(subLinCnt[t.subLineage]||0)+1;});
+  document.querySelectorAll('#sfMenu-lineage .sf-row[data-lin]').forEach(row=>{
+    const lin=row.dataset.lin;const badge=row.querySelector('.nav-badge');
+    if(badge)badge.textContent=linCnt[lin]||0;
+  });
+  document.querySelectorAll('#sfMenu-lineage .sf-sub-row[data-sub]').forEach(row=>{
+    const sub=row.dataset.sub;const badge=row.querySelector('.nav-badge');
+    if(badge)badge.textContent=subLinCnt[sub]||0;
+  });
   updateSfBtns(bt);
 }
 
@@ -3515,6 +3621,7 @@ const LINEAGE_COLORS={
   'Housekeeping':     {bg:'#FEF3C7',fg:'#B45309'},
   'Kitchen':          {bg:'#FFEDD5',fg:'#C2410C'},
   'Dining':           {bg:'#FFEDD5',fg:'#C2410C'},
+  'Outdoor Spaces':   {bg:'#ECFDF5',fg:'#047857'},
   'Administration':   {bg:'#F1F5F9',fg:'#475569'}
 };
 // Dark-mode overrides (reuse badge colour vars via inline style where possible)
@@ -3527,6 +3634,7 @@ const LINEAGE_COLORS_DARK={
   'Housekeeping':     {bg:'#412402',fg:'#FAC775'},
   'Kitchen':          {bg:'#4A1B0C',fg:'#F0997B'},
   'Dining':           {bg:'#4A1B0C',fg:'#F0997B'},
+  'Outdoor Spaces':   {bg:'#0B3326',fg:'#6EE7B7'},
   'Administration':   {bg:'#2C2C2A',fg:'#D3D1C7'}
 };
 
@@ -3536,6 +3644,11 @@ function isDarkMode(){
      window.matchMedia('(prefers-color-scheme:dark)').matches);
 }
 
+function lineageLabel(t){
+  if(!t.lineage)return'';
+  if(t.subLineage)return t.lineage+' › '+t.subLineage;
+  return t.lineage;
+}
 function chipColors(lineage){
   const map=isDarkMode()?LINEAGE_COLORS_DARK:LINEAGE_COLORS;
   return map[lineage]||{bg:'var(--bg-tertiary)',fg:'var(--text-secondary)'};
