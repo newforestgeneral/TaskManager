@@ -1141,6 +1141,9 @@ const AV_COLS=[
   {bg:'#E1F5EE',fg:'#085041'},{bg:'#FAECE7',fg:'#712B13'},
   {bg:'#FAEEDA',fg:'#633806'},{bg:'#EAF3DE',fg:'#27500A'}
 ];
+// Stages visible to workers. WORKER_ACTIVE excludes complete (used for hero count).
+const WORKER_STAGES=['posted','inprogress','review','complete'];
+const WORKER_ACTIVE_STAGES=['posted','inprogress','review'];
 
 let tasks=[],openId=null,editId=null,currentView='list';
 let filter={stage:'all',lineage:'all',assignee:'all',priority:'all',weatherDependent:'all',dueDate:'all',search:''};
@@ -1408,9 +1411,7 @@ function render(){
 }
 
 function visibleTasks(){
-  if(currentRole!=='manager'){
-    return tasks.filter(t=>['posted','inprogress','review','complete'].includes(t.stage));
-  }
+  if(currentRole!=='manager')return tasks.filter(t=>WORKER_STAGES.includes(t.stage));
   return tasks;
 }
 function updateWorkerHero(){
@@ -1418,7 +1419,7 @@ function updateWorkerHero(){
   if(!el)return;
   if(currentRole!=='worker'||!currentProfile?.name){el.textContent='0';return;}
   const n=currentProfile.name.toLowerCase();
-  const count=activeTasks.filter(t=>['posted','inprogress','review'].includes(t.stage)&&t.assignees.some(a=>a.toLowerCase()===n)).length;
+  const count=activeTasks.filter(t=>WORKER_ACTIVE_STAGES.includes(t.stage)&&t.assignees.some(a=>a.toLowerCase()===n)).length;
   el.textContent=count;
   const sub=document.querySelector('.worker-hero-sub');
   if(sub)sub.textContent=count===1?'task assigned to you':'tasks assigned to you';
@@ -1476,9 +1477,9 @@ function renderList(){
   const ft=filteredTasks();
   if(!currentWorkspace){
     el.innerHTML=`<div class="email-list-empty">${currentRole==='manager'?'No workspace selected — create one using the switcher above.':'You haven\'t been added to any workspace yet.'}</div>`;
-    updateBulkBar();return;
+    return;
   }
-  if(!ft.length){el.innerHTML='<div class="email-list-empty">No tasks found</div>';updateBulkBar();return;}
+  if(!ft.length){el.innerHTML='<div class="email-list-empty">No tasks found</div>';return;}
   fetchShortNames(ft,24);
   // Build date buckets
   const now=new Date();
@@ -1559,12 +1560,10 @@ function renderList(){
     html+=group.map(taskRow).join('');
   });
   el.innerHTML=html;
-  updateBulkBar();
 }
 
 function toggleSelect(id,checked){
   if(checked)selectedIds.add(id);else selectedIds.delete(id);
-  updateBulkBar();
   // Update the row highlight without full re-render
   const rows=document.querySelectorAll('#listBody .email-row');
   rows.forEach(row=>{
@@ -1585,7 +1584,6 @@ function toggleSelectAll(checked){
 
 function clearSelection(){selectedIds.clear();renderList();}
 
-function updateBulkBar(){} // removed
 
 async function bulkChangeStage(stage){
   if(!stage||!selectedIds.size)return;
@@ -1681,6 +1679,15 @@ function taskExpandHtml(t){
       <div class="expand-actions" style="flex-shrink:0">
         <button class="btn-voice" id="taskVoiceBtn-${id}" onclick="event.stopPropagation();toggleTaskVoice('${id}')" title="Voice: edit fields or log update">🎤</button>
         ${viewMode!=='archived'?`<button class="btn-secondary" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();openId='${id}';openModal(true)">✎ Edit</button>`:''}
+        ${viewMode!=='archived'?(()=>{
+          const s=t.stage;
+          if(isManager&&s==='assigned') return`<button class="btn-primary" style="font-size:11px;padding:3px 10px" onclick="changeStage('${id}','posted')">📢 Post</button>`;
+          if(isManager&&s==='posted')   return`<button class="btn-secondary" style="font-size:11px;padding:3px 10px" onclick="changeStage('${id}','assigned')">↩ Recall</button>`;
+          if(!isManager&&s==='posted')  return`<button class="btn-primary" style="font-size:11px;padding:3px 10px" onclick="changeStage('${id}','inprogress')">▶ Start</button>`;
+          if(s==='inprogress')          return`<button class="btn-secondary" style="font-size:11px;padding:3px 10px" onclick="changeStage('${id}','review')">📋 Review</button>`;
+          if(isManager&&s==='review')   return`<button class="btn-primary" style="font-size:11px;padding:3px 10px" onclick="changeStage('${id}','complete')">✓ Complete</button>`;
+          return'';
+        })():''}
         ${isManager&&viewMode==='archived'?`<button class="btn-primary" style="font-size:12px;padding:5px 10px" onclick="restoreTask()">Restore</button>`:''}
         ${isManager&&viewMode==='archived'?`<button class="btn-secondary delete-btn" style="font-size:12px;padding:5px 10px" onclick="deleteTaskPermanently()">Delete forever</button>`:''}
       </div>
@@ -2015,7 +2022,7 @@ function openCalDayList(ds){
 
 async function bumpToInProgress(id){
   const t=tasks.find(x=>x.id===id);
-  if(!t||['inprogress','review','complete'].includes(t.stage)||['created','assigned'].includes(t.stage))return;
+  if(!t||t.stage!=='posted')return;
   const today=new Date().toISOString().split('T')[0];
   const upd={stage:'inprogress'};
   if(!t.startDate)upd.start_date=today;
@@ -2046,26 +2053,6 @@ async function changeStage(id,stage){
   await loadData();openDetail(id);
 }
 
-async function savePercent(id,val){
-  const parsed=parseInt(val);
-  const{error}=await sb.from('tasks').update({percent_complete:parsed}).eq('id',id);
-  if(error){console.error('savePercent:',error);return;}
-  await logUpdate(id,`Progress updated to ${parsed}%`);
-  const t=tasks.find(x=>x.id===id);
-  let effectiveStage=t?.stage;
-  // #3: posted → inprogress when % > 0
-  if(parsed>0&&effectiveStage==='posted'){
-    await bumpToInProgress(id);
-    effectiveStage='inprogress';
-  }
-  // #4: inprogress → review when % reaches 100
-  if(parsed===100&&effectiveStage==='inprogress'){
-    await sb.from('tasks').update({stage:'review'}).eq('id',id);
-    await logUpdate(id,'Stage auto-advanced to: Review');
-  }
-  await loadData();
-  if(openId===id)openDetail(id);
-}
 
 async function postUpdate(){
   const input=document.getElementById('updateInput');
@@ -2839,6 +2826,12 @@ async function saveTask(){
   }
   // Auto-advance stage: created → assigned when assignees added
   if(data.assignees.length>0&&data.stage==='created')data.stage='assigned';
+  // Auto-advance stage based on calculated %
+  if(data.percentComplete>0&&data.stage==='posted'){
+    data.stage='inprogress';
+    if(!data.startDate)data.startDate=new Date().toISOString().split('T')[0];
+  }
+  if(data.percentComplete===100&&data.stage==='inprogress')data.stage='review';
   const wasEditing=editId;
   if(editId){
     const before=tasks.find(x=>x.id===editId);
@@ -2940,10 +2933,7 @@ function sfFilter(type,val){
   render();
 }
 
-function updateSfBtns(){
-  const bt=currentRole==='manager'
-    ?activeTasks
-    :activeTasks.filter(t=>['posted','inprogress','review','complete'].includes(t.stage));
+function updateSfBtns(bt){
   const stageCfg={all:{color:'var(--text-tertiary)',label:'All stages'},created:{color:'#64748B',label:'Created'},assigned:{color:'#1D4ED8',label:'Assigned'},posted:{color:'#0E7490',label:'Posted'},inprogress:{color:'#6D28D9',label:'In progress'},review:{color:'#B45309',label:'Review'},complete:{color:'#065F46',label:'Complete'}};
   const priCfg={all:{color:'var(--text-tertiary)',label:'All priorities'},urgent:{color:'#E24B4A',label:'Urgent'},high:{color:'#EF9F27',label:'High'},medium:{color:'#378ADD',label:'Medium'},low:{color:'#888780',label:'Low'}};
   // Stage
@@ -3054,9 +3044,7 @@ function updateBadges(){
   const priCnt={urgent:0,high:0,medium:0,low:0};
   const linCnt={};
   // Count from visible active tasks (respects role stage visibility)
-  const bt=currentRole==='manager'
-    ?activeTasks
-    :activeTasks.filter(t=>['posted','inprogress','review','complete'].includes(t.stage));
+  const bt=currentRole==='manager'?activeTasks:activeTasks.filter(t=>WORKER_STAGES.includes(t.stage));
   bt.forEach(t=>{
     if(cnt[t.stage]!==undefined)cnt[t.stage]++;
     if(priCnt[t.priority]!==undefined)priCnt[t.priority]++;
@@ -3081,7 +3069,7 @@ function updateBadges(){
     'Other Building':'nb-l-OtherBld','Site Infrastructure':'nb-l-SiteInfra','Housekeeping':'nb-l-House',
     'Kitchen':'nb-l-Kitchen','Dining':'nb-l-Dining','Administration':'nb-l-Admin'};
   Object.entries(linMap).forEach(([lin,id])=>{const el=document.getElementById(id);if(el)el.textContent=linCnt[lin]||0;});
-  updateSfBtns();
+  updateSfBtns(bt);
 }
 
 function updateAssigneeSelect(){
@@ -3099,7 +3087,7 @@ function updateAssigneeSelect(){
   const menu=document.getElementById('sfMenu-assignee');
   if(menu){
     // Count tasks per assignee (from role-visible active tasks)
-    const visAct=currentRole==='manager'?activeTasks:activeTasks.filter(t=>['posted','inprogress','review','complete'].includes(t.stage));
+    const visAct=currentRole==='manager'?activeTasks:activeTasks.filter(t=>WORKER_STAGES.includes(t.stage));
     const taskCounts={};
     visAct.forEach(t=>(t.assignees||[]).forEach(a=>{taskCounts[a]=(taskCounts[a]||0)+1;}));
     const countBadge=n=>`<span class="sf-count">${n}</span>`;
