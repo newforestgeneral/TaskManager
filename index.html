@@ -25,6 +25,7 @@
       .badge-green{background:#173404!important;color:#97C459!important}
       .badge-red{background:#501313!important;color:#F09595!important}
       .badge-purple{background:#26215C!important;color:#AFA9EC!important}
+      .badge-cyan{background:#083344!important;color:#67E8F9!important}
       .badge-coral{background:#4A1B0C!important;color:#F0997B!important}
     }
     *{box-sizing:border-box;margin:0;padding:0}
@@ -151,6 +152,7 @@
     .badge-green {background:#EAF3DE;color:#27500A}
     .badge-red   {background:#FCEBEB;color:#791F1F}
     .badge-purple{background:#EEEDFE;color:#3C3489}
+    .badge-cyan  {background:#CFFAFE;color:#0E7490}
     .badge-coral {background:#FAECE7;color:#712B13}
 
     /* LIST VIEW */
@@ -500,6 +502,7 @@
     body.theme-dark .badge-green{background:#173404!important;color:#97C459!important}
     body.theme-dark .badge-red{background:#501313!important;color:#F09595!important}
     body.theme-dark .badge-purple{background:#26215C!important;color:#AFA9EC!important}
+    body.theme-dark .badge-cyan{background:#083344!important;color:#67E8F9!important}
     body.theme-dark .badge-coral{background:#4A1B0C!important;color:#F0997B!important}
     body.theme-dark .email-row.selected{background:#18173a}
     body.theme-dark .bulk-bar{background:#1a1940;border-color:rgba(175,169,236,0.15)}
@@ -514,6 +517,7 @@
     body.theme-light .badge-green{background:#EAF3DE!important;color:#27500A!important}
     body.theme-light .badge-red{background:#FCEBEB!important;color:#791F1F!important}
     body.theme-light .badge-purple{background:#EEEDFE!important;color:#3C3489!important}
+    body.theme-light .badge-cyan{background:#CFFAFE!important;color:#0E7490!important}
     body.theme-light .badge-coral{background:#FAECE7!important;color:#712B13!important}
     body.theme-light .email-row.selected{background:#F4F3FE}
     body.theme-light .bulk-bar{background:#EEEDFE;border-color:rgba(83,74,183,0.2)}
@@ -743,8 +747,9 @@
         </button>
         <div class="sf-menu" id="sfMenu-stage">
           <div class="sf-row active" data-val="all" onclick="sfFilter('stage','all')"><span style="color:var(--text-tertiary)">●</span> All tasks <span class="nav-badge" id="nb-all">0</span></div>
-          <div class="sf-row" data-val="created" onclick="sfFilter('stage','created')"><span style="color:#64748B">●</span> Created <span class="nav-badge" id="nb-created">0</span></div>
-          <div class="sf-row" data-val="assigned" onclick="sfFilter('stage','assigned')"><span style="color:#1D4ED8">●</span> Assigned <span class="nav-badge" id="nb-assigned">0</span></div>
+          <div class="sf-row manager-only" data-val="created" onclick="sfFilter('stage','created')"><span style="color:#64748B">●</span> Created <span class="nav-badge" id="nb-created">0</span></div>
+          <div class="sf-row manager-only" data-val="assigned" onclick="sfFilter('stage','assigned')"><span style="color:#1D4ED8">●</span> Assigned <span class="nav-badge" id="nb-assigned">0</span></div>
+          <div class="sf-row" data-val="posted" onclick="sfFilter('stage','posted')"><span style="color:#0E7490">●</span> Posted <span class="nav-badge" id="nb-posted">0</span></div>
           <div class="sf-row" data-val="inprogress" onclick="sfFilter('stage','inprogress')"><span style="color:#6D28D9">●</span> In progress <span class="nav-badge" id="nb-inprogress">0</span></div>
           <div class="sf-row" data-val="review" onclick="sfFilter('stage','review')"><span style="color:#B45309">●</span> Review <span class="nav-badge" id="nb-review">0</span></div>
           <div class="sf-row" data-val="complete" onclick="sfFilter('stage','complete')"><span style="color:#065F46">●</span> Complete <span class="nav-badge" id="nb-complete">0</span></div>
@@ -822,6 +827,7 @@
     <select id="fsStage" onchange="dropFilter('stage',this.value)">
       <option value="all">All stages</option>
       <option value="created">Created</option><option value="assigned">Assigned</option>
+      <option value="posted">Posted</option>
       <option value="inprogress">In progress</option><option value="review">Review</option>
       <option value="complete">Complete</option>
     </select>
@@ -895,6 +901,7 @@
           <select class="form-select" id="fStage">
             <option value="created">Created</option>
             <option value="assigned">Assigned</option>
+            <option value="posted">Posted</option>
             <option value="inprogress">In progress</option>
             <option value="review">Review</option>
             <option value="complete">Complete</option>
@@ -1110,6 +1117,7 @@ const APP_ORIGIN='http://localhost:5173';
 const STAGE={
   created:   {label:'Created',    color:'#534AB7',badge:'badge-purple'},
   assigned:  {label:'Assigned',   color:'#888780',badge:'badge-gray'},
+  posted:    {label:'Posted',     color:'#0E7490',badge:'badge-cyan'},
   inprogress:{label:'In progress',color:'#378ADD',badge:'badge-blue'},
   review:    {label:'Review',     color:'#EF9F27',badge:'badge-amber'},
   complete:  {label:'Complete',   color:'#1D9E75',badge:'badge-green'}
@@ -1123,6 +1131,7 @@ const PRIORITY={
 const STAGE_AV={
   created:   {bg:'#F1F5F9',fg:'#64748B'},
   assigned:  {bg:'#DBEAFE',fg:'#1D4ED8'},
+  posted:    {bg:'#CFFAFE',fg:'#0E7490'},
   inprogress:{bg:'#EDE9FE',fg:'#6D28D9'},
   review:    {bg:'#FEF3C7',fg:'#B45309'},
   complete:  {bg:'#D1FAE5',fg:'#065F46'}
@@ -1313,7 +1322,6 @@ async function loadData(){
   const{data,error}=await sb.from('tasks').select('*, task_updates(*)')
     .eq('workspace_id',wsId).eq('archived',isArchived).order('created_at',{ascending:true});
   if(error){console.error('loadData:',error);return;}
-  console.log('loadData: DB returned',data?.length,'tasks');
   tasks=(data||[]).map(fromDb);
   if(isArchived){
     const{data:ad}=await sb.from('tasks').select('id,stage,priority,lineage,assignees')
@@ -1400,6 +1408,9 @@ function render(){
 }
 
 function visibleTasks(){
+  if(currentRole!=='manager'){
+    return tasks.filter(t=>['posted','inprogress','review','complete'].includes(t.stage));
+  }
   return tasks;
 }
 function updateWorkerHero(){
@@ -1407,7 +1418,7 @@ function updateWorkerHero(){
   if(!el)return;
   if(currentRole!=='worker'||!currentProfile?.name){el.textContent='0';return;}
   const n=currentProfile.name.toLowerCase();
-  const count=tasks.filter(t=>t.assignees.some(a=>a.toLowerCase()===n)&&t.stage!=='complete').length;
+  const count=activeTasks.filter(t=>['posted','inprogress','review'].includes(t.stage)&&t.assignees.some(a=>a.toLowerCase()===n)).length;
   el.textContent=count;
   const sub=document.querySelector('.worker-hero-sub');
   if(sub)sub.textContent=count===1?'task assigned to you':'tasks assigned to you';
@@ -1473,7 +1484,7 @@ function renderList(){
   const now=new Date();
   const pad=n=>String(n).padStart(2,'0');
   const todayStr=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-  const STAGE_ORDER=['created','assigned','inprogress','review','complete'];
+  const STAGE_ORDER=['created','assigned','posted','inprogress','review','complete'];
   const stageRank=Object.fromEntries(STAGE_ORDER.map((s,i)=>[s,i]));
   const sortTasks=arr=>[...arr].sort((a,b)=>{
     const sr=(stageRank[a.stage||'created']||0)-(stageRank[b.stage||'created']||0);
@@ -2004,7 +2015,7 @@ function openCalDayList(ds){
 
 async function bumpToInProgress(id){
   const t=tasks.find(x=>x.id===id);
-  if(!t||['inprogress','review','complete'].includes(t.stage))return;
+  if(!t||['inprogress','review','complete'].includes(t.stage)||['created','assigned'].includes(t.stage))return;
   const today=new Date().toISOString().split('T')[0];
   const upd={stage:'inprogress'};
   if(!t.startDate)upd.start_date=today;
@@ -2042,8 +2053,8 @@ async function savePercent(id,val){
   await logUpdate(id,`Progress updated to ${parsed}%`);
   const t=tasks.find(x=>x.id===id);
   let effectiveStage=t?.stage;
-  // #3: assigned → inprogress when % > 0
-  if(parsed>0&&effectiveStage==='assigned'){
+  // #3: posted → inprogress when % > 0
+  if(parsed>0&&effectiveStage==='posted'){
     await bumpToInProgress(id);
     effectiveStage='inprogress';
   }
@@ -2066,9 +2077,9 @@ async function postUpdate(){
   });
   if(error){console.error('postUpdate:',error);return;}
   input.value='';
-  // #2: assigned → inprogress when first update posted
+  // #2: posted → inprogress when first update posted
   const t=tasks.find(x=>x.id===openId);
-  if(t?.stage==='assigned')await bumpToInProgress(openId);
+  if(t?.stage==='posted')await bumpToInProgress(openId);
   await loadData();openDetail(openId);
 }
 
@@ -2434,7 +2445,7 @@ async function confirmVoiceEdits(){
       // percent > 0 on assigned → inprogress (also stamps start date)
       if(edits.percentComplete!==undefined){
         const pct=parseInt(String(edits.percentComplete));
-        if(pct>0&&effectiveStage==='assigned'){await bumpToInProgress(tid);effectiveStage='inprogress';}
+        if(pct>0&&effectiveStage==='posted'){await bumpToInProgress(tid);effectiveStage='inprogress';}
         if(pct===100&&effectiveStage==='inprogress'){
           await sb.from('tasks').update({stage:'review'}).eq('id',tid);
           await logUpdate(tid,'Stage auto-advanced to: Review');
@@ -2453,9 +2464,9 @@ async function confirmVoiceEdits(){
         task_id:tid,author,text:result.update_text,
         date:new Date().toISOString().split('T')[0],via:'Voice'
       });
-      // also bump stage if still assigned
+      // also bump stage if still posted
       const cur=tasks.find(x=>x.id===tid);
-      if(cur?.stage==='assigned')await bumpToInProgress(tid);
+      if(cur?.stage==='posted')await bumpToInProgress(tid);
     }
 
     clearVoicePreview();
@@ -2930,7 +2941,10 @@ function sfFilter(type,val){
 }
 
 function updateSfBtns(){
-  const stageCfg={all:{color:'var(--text-tertiary)',label:'All stages'},created:{color:'#64748B',label:'Created'},assigned:{color:'#1D4ED8',label:'Assigned'},inprogress:{color:'#6D28D9',label:'In progress'},review:{color:'#B45309',label:'Review'},complete:{color:'#065F46',label:'Complete'}};
+  const bt=currentRole==='manager'
+    ?activeTasks
+    :activeTasks.filter(t=>['posted','inprogress','review','complete'].includes(t.stage));
+  const stageCfg={all:{color:'var(--text-tertiary)',label:'All stages'},created:{color:'#64748B',label:'Created'},assigned:{color:'#1D4ED8',label:'Assigned'},posted:{color:'#0E7490',label:'Posted'},inprogress:{color:'#6D28D9',label:'In progress'},review:{color:'#B45309',label:'Review'},complete:{color:'#065F46',label:'Complete'}};
   const priCfg={all:{color:'var(--text-tertiary)',label:'All priorities'},urgent:{color:'#E24B4A',label:'Urgent'},high:{color:'#EF9F27',label:'High'},medium:{color:'#378ADD',label:'Medium'},low:{color:'#888780',label:'Low'}};
   // Stage
   const sv=filter.stage||'all';
@@ -2970,7 +2984,7 @@ function updateSfBtns(){
   const sfAss=document.getElementById('sfBtn-assignee');
   if(sfAss){
     document.getElementById('sfLabel-assignee').textContent=av==='all'?'All users':(av.length>15?av.slice(0,13)+'…':av);
-    const assCount=av==='all'?tasks.length:tasks.filter(t=>(t.assignees||[]).includes(av)).length;
+    const assCount=av==='all'?bt.length:bt.filter(t=>(t.assignees||[]).includes(av)).length;
     document.getElementById('sfCount-assignee').textContent=assCount;
     sfAss.classList.toggle('filtered',av!=='all');
   }
@@ -2980,7 +2994,7 @@ function updateSfBtns(){
   const sfWd=document.getElementById('sfBtn-weatherDependent');
   if(sfWd){
     document.getElementById('sfLabel-weatherDependent').textContent=wdLabels[wv]||'All weather';
-    const wdAll=tasks.length,wdYes=tasks.filter(t=>t.weatherDependent==='yes').length,wdNo=tasks.filter(t=>t.weatherDependent==='no').length;
+    const wdAll=bt.length,wdYes=bt.filter(t=>t.weatherDependent==='yes').length,wdNo=bt.filter(t=>t.weatherDependent==='no').length;
     const wdCount=wv==='all'?wdAll:wv==='yes'?wdYes:wdNo;
     document.getElementById('sfCount-weatherDependent').textContent=wdCount;
     const nbWdAll=document.getElementById('nb-wd-all');if(nbWdAll)nbWdAll.textContent=wdAll;
@@ -3005,8 +3019,8 @@ function updateSfBtns(){
     const nwMon=fmtD(weekStart(7)),nwSun=fmtD(new Date(weekStart(7).getTime()+6*86400000));
     const mStart=`${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-01`;
     const mEnd=`${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-${pad2(new Date(now2.getFullYear(),now2.getMonth()+1,0).getDate())}`;
-    const ddCnt={all:tasks.length,today:0,tomorrow:0,'this-week':0,'next-week':0,'this-month':0};
-    tasks.forEach(t=>{if(!t.dueDate)return;const d=t.dueDate.slice(0,10);
+    const ddCnt={all:bt.length,today:0,tomorrow:0,'this-week':0,'next-week':0,'this-month':0};
+    bt.forEach(t=>{if(!t.dueDate)return;const d=t.dueDate.slice(0,10);
       if(d===tod)ddCnt.today++;
       if(d===tmrS)ddCnt.tomorrow++;
       if(d>=wkMon&&d<=wkSun)ddCnt['this-week']++;
@@ -3036,11 +3050,13 @@ function resetFilters(){
 function sideFilter(type,val,activeId,prefix){sfFilter(type,val);}
 
 function updateBadges(){
-  const cnt={created:0,assigned:0,inprogress:0,review:0,complete:0};
+  const cnt={created:0,assigned:0,posted:0,inprogress:0,review:0,complete:0};
   const priCnt={urgent:0,high:0,medium:0,low:0};
   const linCnt={};
-  // Always count from active tasks so sidebar badges stay meaningful in archived mode
-  const bt=activeTasks;
+  // Count from visible active tasks (respects role stage visibility)
+  const bt=currentRole==='manager'
+    ?activeTasks
+    :activeTasks.filter(t=>['posted','inprogress','review','complete'].includes(t.stage));
   bt.forEach(t=>{
     if(cnt[t.stage]!==undefined)cnt[t.stage]++;
     if(priCnt[t.priority]!==undefined)priCnt[t.priority]++;
@@ -3049,6 +3065,7 @@ function updateBadges(){
   document.getElementById('nb-all').textContent=bt.length;
   document.getElementById('nb-created').textContent=cnt.created;
   document.getElementById('nb-assigned').textContent=cnt.assigned;
+  const nbPosted=document.getElementById('nb-posted');if(nbPosted)nbPosted.textContent=cnt.posted;
   document.getElementById('nb-inprogress').textContent=cnt.inprogress;
   document.getElementById('nb-review').textContent=cnt.review;
   document.getElementById('nb-complete').textContent=cnt.complete;
@@ -3081,11 +3098,12 @@ function updateAssigneeSelect(){
   // Rebuild sidebar assignee dropdown
   const menu=document.getElementById('sfMenu-assignee');
   if(menu){
-    // Count tasks per assignee (from all visible tasks in current workspace)
+    // Count tasks per assignee (from role-visible active tasks)
+    const visAct=currentRole==='manager'?activeTasks:activeTasks.filter(t=>['posted','inprogress','review','complete'].includes(t.stage));
     const taskCounts={};
-    tasks.forEach(t=>(t.assignees||[]).forEach(a=>{taskCounts[a]=(taskCounts[a]||0)+1;}));
+    visAct.forEach(t=>(t.assignees||[]).forEach(a=>{taskCounts[a]=(taskCounts[a]||0)+1;}));
     const countBadge=n=>`<span class="sf-count">${n}</span>`;
-    menu.innerHTML=`<div class="sf-row${cur==='all'?' active':''}" data-val="all" onclick="sfFilter('assignee','all')"><span style="flex:1">All users</span>${countBadge(tasks.length)}</div>`+
+    menu.innerHTML=`<div class="sf-row${cur==='all'?' active':''}" data-val="all" onclick="sfFilter('assignee','all')"><span style="flex:1">All users</span>${countBadge(visAct.length)}</div>`+
       names.map(a=>`<div class="sf-row${cur===a?' active':''}" data-val="${escHtml(a)}" onclick="sfFilter('assignee','${escHtml(a).replace(/'/g,"\\'")}')"><span style="flex:1">${escHtml(a)}</span>${countBadge(taskCounts[a]||0)}</div>`).join('');
   }
 }
