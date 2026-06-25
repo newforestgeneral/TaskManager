@@ -87,6 +87,13 @@ let viewMode='active'; // 'active' | 'archived'
 let activeTasks=[]; // snapshot of active tasks for sidebar badge counts
 let archivedCount=0,backBurnerCount=0;
 const selectedIds=new Set();
+let workerSchedules=[]; // [{id,profileId,workspaceId,dayOfWeek,startTime,endTime}]
+let workerTimeOff=[]; // [{id,profileId,workspaceId,dateFrom,dateTo,reason}]
+let _generatedSchedule=null; // {taskId: dateStr} from generateSchedule()
+let _scheduleAllocated={}; // {profileId: {dateStr: hoursAllocated}}
+let _scheduleWeekOffset=0; // weeks offset from today for schedule view
+let _schedWeek=[0,1,2,3,4,5,6].map(()=>({active:false,startTime:'08:00',endTime:'16:00'}));
+let _touchDragId=null,_touchGhost=null,_touchStartX=0,_touchStartY=0,_touchDragging=false;
 
 const LINEAGES=['Land & Forest','Farm & Garden','Building Improvements','Other Building','Site Infrastructure','Housekeeping','Kitchen','Dining','Administration'];
 let voiceState={recording:false,mediaRecorder:null,chunks:[],stream:null,releaseTimer:null};
@@ -339,6 +346,20 @@ async function loadData(){
       conditions:r.conditions||[],conditionLogic:r.condition_logic||'AND'
     }));
   }
+  // Load worker schedules
+  {
+    let wsq=sb.from('worker_schedules').select('*');
+    wsq=isAll?wsq.in('workspace_id',wsIds):wsq.eq('workspace_id',wsId);
+    const{data:wd}=await wsq;
+    workerSchedules=(wd||[]).map(r=>({id:r.id,profileId:r.profile_id,workspaceId:r.workspace_id,dayOfWeek:r.day_of_week,startTime:(r.start_time||'08:00').slice(0,5),endTime:(r.end_time||'16:00').slice(0,5)}));
+  }
+  // Load time off (only current + future entries)
+  {
+    let toq=sb.from('time_off').select('*').gte('date_to',todayStr());
+    toq=isAll?toq.in('workspace_id',wsIds):toq.eq('workspace_id',wsId);
+    const{data:tod}=await toq;
+    workerTimeOff=(tod||[]).map(r=>({id:r.id,profileId:r.profile_id,workspaceId:r.workspace_id,dateFrom:r.date_from,dateTo:r.date_to,reason:r.reason||''}));
+  }
   if(!isArchived&&!isBackBurner&&!isAll){
     const stale=tasks.filter(t=>t.stage==='created'&&t.assignees.length>0);
     for(const t of stale){
@@ -414,6 +435,8 @@ async function switchWorkspace(ws){
 function render(){
   if(currentView==='calendar'){renderCalendar();}
   else if(currentView==='dashboard'){renderDashboard();}
+  else if(currentView==='automations'){renderAutomations();}
+  else if(currentView==='schedule'){renderSchedule();}
   else{renderList();}
   updateBadges();updateAssigneeSelect();updateTopbarTitle();updateWorkerHero();
   renderWeatherBanner();
@@ -2356,9 +2379,33 @@ function doSearch(val){ filter.search=val.trim(); // keep both search inputs in 
 document.querySelectorAll(`#sfMenu-${type} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val===val)); // Sync filterBar select 
 const selMap={stage:'fsStage',lineage:'fsLineage',priority:'fsPriority'}; if(selMap[type]){const s=document.getElementById(selMap[type]);if(s)s.value=val;} render(); } function switchViewMode(mode){ viewMode=mode; closeDetail();
   // If coming from a full-screen view, restore list
-  if(currentView==='dashboard'||currentView==='automations'){currentView='list';['dashboardView','automationsView'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});const listEl=document.getElementById('listView');if(listEl)listEl.style.display='';}
+  if(currentView==='dashboard'||currentView==='automations'||currentView==='schedule'){currentView='list';['dashboardView','automationsView','scheduleView'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});const listEl=document.getElementById('listView');if(listEl)listEl.style.display='';}
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); if(mode==='archived'){ document.getElementById('snArchived')?.classList.add('active'); } else if(mode==='backburner'){ document.getElementById('snBackBurner')?.classList.add('active'); } else { filter=blankFilter(false); // Reset all sf-row active states to 'all'
-['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{ document.querySelectorAll(`#sfMenu-${t} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val==='all')); }); } loadData(); } // Sidebar filter dropdown functions 
+['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{ document.querySelectorAll(`#sfMenu-${t} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val==='all')); }); } loadData(); }
+
+function switchToView(v){
+  // Hide all main content areas
+  ['listView','calendarView','dashboardView','automationsView','scheduleView'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.style.display='none';
+  });
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  currentView=v;
+  if(v==='dashboard'){
+    const el=document.getElementById('dashboardView');if(el)el.style.display='flex';
+    document.getElementById('snDashboard')?.classList.add('active');
+    renderDashboard();
+  } else if(v==='automations'){
+    const el=document.getElementById('automationsView');if(el)el.style.display='flex';
+    document.getElementById('snAutomations')?.classList.add('active');
+    renderAutomations();
+  } else if(v==='schedule'){
+    const el=document.getElementById('scheduleView');if(el)el.style.display='flex';
+    document.getElementById('snSchedule')?.classList.add('active');
+    renderSchedule();
+  }
+}
+
+// Sidebar filter dropdown functions 
 let sfOpen=null; function toggleSfDropdown(type){ const menu=document.getElementById('sfMenu-'+type); const btn=document.getElementById('sfBtn-'+type); if(!menu||!btn)return; const isOpen=menu.classList.contains('open'); ['stage','priority','lineage','assignee','weatherDependent','dueDate'].forEach(t=>{ document.getElementById('sfMenu-'+t)?.classList.remove('open'); document.getElementById('sfBtn-'+t)?.classList.remove('open'); }); if(!isOpen){menu.classList.add('open');btn.classList.add('open');sfOpen=type;} else sfOpen=null; } document.addEventListener('click',e=>{ if(sfOpen&&!e.target.closest('.sf-wrap')){ document.getElementById('sfMenu-'+sfOpen)?.classList.remove('open'); document.getElementById('sfBtn-'+sfOpen)?.classList.remove('open'); sfOpen=null; } },true); function buildLineageFilter(){ const ALL_LINEAGES=['Land & Forest','Farm & Garden','Building Improvements','Other Building', 'Outdoor Spaces','Site Infrastructure','Housekeeping','Kitchen','Dining','Administration']; const menu=document.getElementById('sfMenu-lineage'); if(!menu)return; const esc=s=>s.replace(/&/g,'&amp;').replace(/'/g,'&#39;'); let html=`<div class="sf-row active" data-val="all" onclick="sfFilter('lineage','all')"><span style="color:var(--text-tertiary);flex-shrink:0">◈</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">All lineages</span><span class="nav-badge" id="nb-l-all">0</span></div>`; ALL_LINEAGES.forEach(lin=>{ const subs=SUB_LINEAGES[lin]||[]; const chevron=subs.length?`<span class="sf-row-chev" id="sfLinChev-${esc(lin)}" style="width:14px;flex-shrink:0;text-align:center" onclick="toggleLinSubs(event,'${esc(lin)}')">▾</span>`:'<span style="width:14px;flex-shrink:0"></span>'; html+=`<div class="sf-row" data-val="${esc(lin)}" data-lin="${esc(lin)}" onclick="sfFilter('lineage','${esc(lin)}')"><span style="color:var(--text-tertiary);flex-shrink:0">◈</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(lin)}">${esc(lin)}</span><span class="nav-badge">0</span>${chevron}</div>`; if(subs.length){ html+=`<div class="sf-sub-rows" id="sfSubRows-${esc(lin)}">`; subs.forEach(s=>{ html+=`<div class="sf-sub-row" data-sub="${esc(s.value)}" onclick="sfFilterSub('${esc(lin)}','${esc(s.value)}')"><span style="flex-shrink:0">·</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.label)}">${esc(s.label)}</span><span class="nav-badge">0</span><span style="width:14px;flex-shrink:0"></span></div>`; }); html+=`</div>`; } }); menu.innerHTML=html; } function toggleLinSubs(e,lin){ e.stopPropagation(); const rows=document.getElementById('sfSubRows-'+lin); const chev=document.getElementById('sfLinChev-'+lin); if(rows){rows.classList.toggle('open');chev?.classList.toggle('open');} } function sfFilterSub(lin,sub){ if(viewMode==='archived'){switchViewMode('active');return;} filter.lineage=lin; filter.subLineage=sub; // Update active states 
 document.querySelectorAll('#sfMenu-lineage .sf-row').forEach(r=>r.classList.toggle('active',r.dataset.lin===lin)); document.querySelectorAll('#sfMenu-lineage .sf-sub-row').forEach(r=>r.classList.toggle('active',r.dataset.sub===sub)); document.getElementById('sfMenu-lineage')?.classList.remove('open'); document.getElementById('sfBtn-lineage')?.classList.remove('open'); sfOpen=null; render(); } function sfFilter(type,val){ if(viewMode==='archived'){switchViewMode('active');return;} filter[type]=val; filter._seriesRootId=null; if(type==='lineage')filter.subLineage='all'; // clear sub when changing parent 
 document.querySelectorAll(`#sfMenu-${type} .sf-row`).forEach(r=>r.classList.toggle('active',r.dataset.val===val)); if(type==='lineage')document.querySelectorAll('#sfMenu-lineage .sf-sub-row').forEach(r=>r.classList.remove('active')); // Close dropdown 
@@ -2391,26 +2438,9 @@ let calYear=new Date().getFullYear(), calMonth=new Date().getMonth(); // Short-n
 // 'name' is stored so we can detect if the task name has changed and re-fetch 
 const CAL_NAMES_KEY='tt_cal_names'; const LIST_NAMES_KEY='tt_list_names'; let calShortNames=JSON.parse(localStorage.getItem(CAL_NAMES_KEY)||'{}'); let listShortNames=JSON.parse(localStorage.getItem(LIST_NAMES_KEY)||'{}'); async function fetchShortNames(taskList, maxLen=0){ const cache=maxLen>0?listShortNames:calShortNames; const cacheKey=maxLen>0?LIST_NAMES_KEY:CAL_NAMES_KEY; const uncached=taskList.filter(t=>{ const entry=cache[t.id]; return !entry||entry.name!==t.name; }); if(!uncached.length)return; try{ const body=maxLen>0 ?{tasks:uncached.map(t=>({id:t.id,name:t.name})),maxLen} :uncached.map(t=>({id:t.id,name:t.name})); const res=await fetch(`${SUPABASE_URL}/functions/v1/shorten-tasks`,{ method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${SUPABASE_KEY}`}, body:JSON.stringify(body) }); if(!res.ok)return; const data=await res.json(); if(Array.isArray(data)){ data.forEach(r=>{ if(r.id&&r.short){ const orig=uncached.find(t=>t.id===r.id); cache[r.id]={short:r.short,name:orig?.name||r.short}; } }); localStorage.setItem(cacheKey,JSON.stringify(cache)); if(maxLen>0)renderList();else renderCalendar(); } } catch(e){console.warn('shorten-tasks:',e);} } function calShortName(t){ const entry=calShortNames[t.id]; return(entry&&entry.name===t.name)?entry.short:t.name; } function listShortName(t){ const entry=listShortNames[t.id]; return(entry&&entry.name===t.name)?entry.short:t.name; } // Lineage → color mapping for chips 
 const LINEAGE_COLORS={ 'Land & Forest': {bg:'#D1FAE5',fg:'#065F46'}, 'Farm & Garden': {bg:'#D1FAE5',fg:'#065F46'}, 'Building Improvements':{bg:'#DBEAFE',fg:'#1D4ED8'}, 'Other Building': {bg:'#DBEAFE',fg:'#1D4ED8'}, 'Site Infrastructure':{bg:'#EDE9FE',fg:'#6D28D9'}, 'Housekeeping': {bg:'#FEF3C7',fg:'#B45309'}, 'Kitchen': {bg:'#FFEDD5',fg:'#C2410C'}, 'Dining': {bg:'#FFEDD5',fg:'#C2410C'}, 'Outdoor Spaces': {bg:'#ECFDF5',fg:'#047857'}, 'Administration': {bg:'#F1F5F9',fg:'#475569'} }; // Dark-mode overrides (reuse badge colour vars via inline style where possible) 
-const LINEAGE_COLORS_DARK={ 'Land & Forest': {bg:'#173404',fg:'#97C459'}, 'Farm & Garden': {bg:'#173404',fg:'#97C459'}, 'Building Improvements':{bg:'#042C53',fg:'#85B7EB'}, 'Other Building': {bg:'#042C53',fg:'#85B7EB'}, 'Site Infrastructure':{bg:'#26215C',fg:'#AFA9EC'}, 'Housekeeping': {bg:'#412402',fg:'#FAC775'}, 'Kitchen': {bg:'#4A1B0C',fg:'#F0997B'}, 'Dining': {bg:'#4A1B0C',fg:'#F0997B'}, 'Outdoor Spaces': {bg:'#0B3326',fg:'#6EE7B7'}, 'Administration': {bg:'#2C2C2A',fg:'#D3D1C7'} }; function isDarkMode(){ return document.body.classList.contains('theme-dark')|| (!document.body.classList.contains('theme-light')&& window.matchMedia('(prefers-color-scheme:dark)').matches); } function lineageLabel(t){ if(!t.lineage)return''; if(t.subLineage)return t.lineage+' › '+t.subLineage; return t.lineage; } function chipColors(lineage){ const map=isDarkMode()?LINEAGE_COLORS_DARK:LINEAGE_COLORS; return map[lineage]||{bg:'var(--bg-tertiary)',fg:'var(--text-secondary)'}; } function switchView(v){ currentView=v; localStorage.setItem('tt_view',v); const listEl=document.getElementById('listView'); const calEl=document.getElementById('calendarView'); const dashEl=document.getElementById('dashboardView'); const btnList=document.getElementById('viewBtnList'); const btnCal=document.getElementById('viewBtnCal'); const mobBtnList=document.getElementById('mobViewBtnList'); const mobBtnCal=document.getElementById('mobViewBtnCal'); if(dashEl)dashEl.style.display='none'; const _autoEl=document.getElementById('automationsView');if(_autoEl)_autoEl.style.display='none'; if(v==='calendar'){ if(listEl)listEl.style.display='none'; if(calEl)calEl.style.display='flex'; if(calEl)calEl.style.flexDirection='column'; if(btnList){btnList.style.background='transparent';btnList.style.color='var(--text-secondary)';} if(btnCal){btnCal.style.background='var(--bg-primary)';btnCal.style.color='var(--text-primary)';} if(mobBtnList){mobBtnList.style.background='transparent';mobBtnList.style.color='var(--text-secondary)';} if(mobBtnCal){mobBtnCal.style.background='var(--bg-primary)';mobBtnCal.style.color='var(--text-primary)';} renderCalendar(); } else { if(listEl)listEl.style.display=''; if(calEl)calEl.style.display='none'; if(btnList){btnList.style.background='var(--bg-primary)';btnList.style.color='var(--text-primary)';} if(btnCal){btnCal.style.background='transparent';btnCal.style.color='var(--text-secondary)';} if(mobBtnList){mobBtnList.style.background='var(--bg-primary)';mobBtnList.style.color='var(--text-primary)';} if(mobBtnCal){mobBtnCal.style.background='transparent';mobBtnCal.style.color='var(--text-secondary)';} renderList(); } }
+const LINEAGE_COLORS_DARK={ 'Land & Forest': {bg:'#173404',fg:'#97C459'}, 'Farm & Garden': {bg:'#173404',fg:'#97C459'}, 'Building Improvements':{bg:'#042C53',fg:'#85B7EB'}, 'Other Building': {bg:'#042C53',fg:'#85B7EB'}, 'Site Infrastructure':{bg:'#26215C',fg:'#AFA9EC'}, 'Housekeeping': {bg:'#412402',fg:'#FAC775'}, 'Kitchen': {bg:'#4A1B0C',fg:'#F0997B'}, 'Dining': {bg:'#4A1B0C',fg:'#F0997B'}, 'Outdoor Spaces': {bg:'#0B3326',fg:'#6EE7B7'}, 'Administration': {bg:'#2C2C2A',fg:'#D3D1C7'} }; function isDarkMode(){ return document.body.classList.contains('theme-dark')|| (!document.body.classList.contains('theme-light')&& window.matchMedia('(prefers-color-scheme:dark)').matches); } function lineageLabel(t){ if(!t.lineage)return''; if(t.subLineage)return t.lineage+' › '+t.subLineage; return t.lineage; } function chipColors(lineage){ const map=isDarkMode()?LINEAGE_COLORS_DARK:LINEAGE_COLORS; return map[lineage]||{bg:'var(--bg-tertiary)',fg:'var(--text-secondary)'}; } function switchView(v){ currentView=v; localStorage.setItem('tt_view',v); const listEl=document.getElementById('listView'); const calEl=document.getElementById('calendarView'); const dashEl=document.getElementById('dashboardView'); const btnList=document.getElementById('viewBtnList'); const btnCal=document.getElementById('viewBtnCal'); const mobBtnList=document.getElementById('mobViewBtnList'); const mobBtnCal=document.getElementById('mobViewBtnCal'); if(dashEl)dashEl.style.display='none'; const _autoEl=document.getElementById('automationsView');if(_autoEl)_autoEl.style.display='none'; const _schedEl=document.getElementById('scheduleView');if(_schedEl)_schedEl.style.display='none'; if(v==='calendar'){ if(listEl)listEl.style.display='none'; if(calEl)calEl.style.display='flex'; if(calEl)calEl.style.flexDirection='column'; if(btnList){btnList.style.background='transparent';btnList.style.color='var(--text-secondary)';} if(btnCal){btnCal.style.background='var(--bg-primary)';btnCal.style.color='var(--text-primary)';} if(mobBtnList){mobBtnList.style.background='transparent';mobBtnList.style.color='var(--text-secondary)';} if(mobBtnCal){mobBtnCal.style.background='var(--bg-primary)';mobBtnCal.style.color='var(--text-primary)';} renderCalendar(); } else { if(listEl)listEl.style.display=''; if(calEl)calEl.style.display='none'; if(btnList){btnList.style.background='var(--bg-primary)';btnList.style.color='var(--text-primary)';} if(btnCal){btnCal.style.background='transparent';btnCal.style.color='var(--text-secondary)';} if(mobBtnList){mobBtnList.style.background='var(--bg-primary)';mobBtnList.style.color='var(--text-primary)';} if(mobBtnCal){mobBtnCal.style.background='transparent';mobBtnCal.style.color='var(--text-secondary)';} renderList(); } }
 
-function switchToView(v){
-  const listEl=document.getElementById('listView');
-  const calEl=document.getElementById('calendarView');
-  const dashEl=document.getElementById('dashboardView');
-  const autoEl=document.getElementById('automationsView');
-  currentView=v;
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  [listEl,calEl,dashEl,autoEl].forEach(el=>{if(el)el.style.display='none';});
-  if(v==='dashboard'){
-    if(dashEl)dashEl.style.display='flex';
-    document.getElementById('snDashboard')?.classList.add('active');
-    renderDashboard();
-  } else if(v==='automations'){
-    if(autoEl)autoEl.style.display='flex';
-    document.getElementById('snAutomations')?.classList.add('active');
-    renderAutomations();
-  }
-} function calNav(dir){calMonth+=dir;if(calMonth>11){calMonth=0;calYear++;}else if(calMonth<0){calMonth=11;calYear--;}renderCalendar();} function calGoToday(){calYear=new Date().getFullYear();calMonth=new Date().getMonth();renderCalendar();} function renderCalendar(){ const label=document.getElementById('calMonthLabel'); const grid=document.getElementById('calGrid'); if(!label||!grid)return; fetchShortNames(filteredTasks()); const monthName=new Date(calYear,calMonth,1).toLocaleDateString('en-CA',{month:'long',year:'numeric'}); label.textContent=monthName; const today=new Date(); const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`; function getTaskSpan(t){ const anchor=t.startDate||t.dueDate; if(!anchor)return null; const startStr=anchor.slice(0,10); const durDays=t.estimatedHours>0?Math.max(1,Math.ceil(t.estimatedHours/8)):1; if(durDays<=1&&!t.startDate)return{start:startStr,end:startStr}; const startD=new Date(startStr+'T12:00:00'); const endByDur=new Date(startD); endByDur.setDate(endByDur.getDate()+durDays-1); let endStr=ymd(endByDur); if(t.dueDate&&t.dueDate.slice(0,10)<endStr)endStr=t.dueDate.slice(0,10); return{start:startStr,end:endStr}; } const allT=filteredTasks(); const taskSpans=[]; allT.forEach(t=>{const s=getTaskSpan(t);if(s)taskSpans.push({t,start:s.start,end:s.end});}); const first=new Date(calYear,calMonth,1); const last=new Date(calYear,calMonth+1,0); let startPad=first.getDay()-1; if(startPad<0)startPad=6; const allCells=[]; for(let i=0;i<startPad;i++){const d=new Date(calYear,calMonth,1-startPad+i);allCells.push({ds:ymd(d),inMonth:false,dayNum:d.getDate()});} for(let d=1;d<=last.getDate();d++){const ds=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;allCells.push({ds,inMonth:true,dayNum:d});} const endPad=(7-allCells.length%7)%7; for(let i=1;i<=endPad;i++){const d=new Date(calYear,calMonth+1,i);allCells.push({ds:ymd(d),inMonth:false,dayNum:i});} function getLanesForWeek(weekDates){ const ws=weekDates[0],we=weekDates[6]; const wt=taskSpans.filter(s=>s.start<=we&&s.end>=ws); wt.sort((a,b)=>a.start<b.start?-1:a.start>b.start?1:0); const lanes=[]; wt.forEach(item=>{ const cs=item.start<ws?ws:item.start,ce=item.end>we?we:item.end; let li=lanes.findIndex(lane=>!lane.some(ex=>{const es=ex.start<ws?ws:ex.start,ee=ex.end>we?we:ex.end;return es<=ce&&ee>=cs;})); if(li===-1){li=lanes.length;lanes.push([]);} lanes[li].push(item); }); return lanes; } function chipHtmlForItem(item,ds,weekDates,bgColor,fgColor){ const{t}=item; const isSolo=item.start===item.end; const isSpanStart=ds===item.start,isSpanEnd=ds===item.end; const isWeekStart=ds===weekDates[0],isWeekEnd=ds===weekDates[6]; let br,gcls; if(isSolo){br='3px';gcls='';} else if((isSpanStart||isWeekStart)&&(isSpanEnd||isWeekEnd)){br='3px';gcls='';} else if(isSpanStart||isWeekStart){br='3px 0 0 3px';gcls=' gantt-start';} else if(isSpanEnd||isWeekEnd){br='0 3px 3px 0';gcls=' gantt-end';} else{br='0';gcls=' gantt-mid';} const showName=isSolo||isSpanStart||isWeekStart; return`<div class="cal-task-chip${gcls}" style="background:${bgColor};color:${fgColor};border-radius:${br}" onclick="openCalDetail('${t.id}')" title="${escHtml(t.name)}">${showName?escHtml(calShortName(t)):''}</div>`; } const DAY_HEADERS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; let html=`<div class="cal-grid">`; DAY_HEADERS.forEach(d=>{html+=`<div class="cal-header-cell">${d}</div>`;}); const MAX_SHOW=3; const numWeeks=allCells.length/7; for(let w=0;w<numWeeks;w++){ const week=allCells.slice(w*7,(w+1)*7); const weekDates=week.map(c=>c.ds); const lanes=getLanesForWeek(weekDates); const shownLanes=lanes.slice(0,MAX_SHOW); const overflowLanes=lanes.slice(MAX_SHOW); week.forEach(({ds,inMonth,dayNum})=>{ const wxDay=weatherForecast?(weatherForecast.find(w=>w.date===ds)||(ds===todayStr?weatherForecast[0]:null)):null; const daysAhead=(new Date(ds+'T12:00:00')-new Date(todayStr+'T12:00:00'))/(86400000); const wxHtml=wxDay&&ds>=todayStr&&daysAhead<=14 ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(' · '):wmoIcon(wxDay.code).label}" style="font-size:13px;line-height:1;cursor:pointer;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();openDayWeatherDetail('${ds}')">${wmoIcon(wxDay.code).icon}</span>`:''; let chips=''; shownLanes.forEach(lane=>{ const item=lane.find(s=>ds>=s.start&&ds<=s.end); if(!item){chips+=`<div class="cal-chip-spacer"></div>`;return;} const{t}=item; const c=chipColors(t.lineage||''); const od=t.stage!=='complete'&&t.dueDate&&t.dueDate.slice(0,10)<todayStr; chips+=chipHtmlForItem(item,ds,weekDates,od?'#FEE2E2':c.bg,od?'#991B1B':c.fg); }); const overflowCount=overflowLanes.reduce((n,lane)=>n+(lane.some(s=>ds>=s.start&&ds<=s.end)?1:0),0); if(overflowCount>0)chips+=`<div class="cal-overflow" onclick="openCalDayList('${ds}')">+${overflowCount} more</div>`; const cellCls=`cal-cell${inMonth?'':' other-month'}${ds===todayStr?' today':''}`; html+=`<div class="${cellCls}"> <div style="display:flex;align-items:center;gap:2px"><div class="cal-day-num" style="cursor:pointer" onclick="openDayOverview('${ds}')">${dayNum}</div>${wxHtml}</div> ${chips} </div>`; }); } html+=`</div>`; grid.innerHTML=html; } // ── PUSH NOTIFICATIONS ── 
+function calNav(dir){calMonth+=dir;if(calMonth>11){calMonth=0;calYear++;}else if(calMonth<0){calMonth=11;calYear--;}renderCalendar();} function calGoToday(){calYear=new Date().getFullYear();calMonth=new Date().getMonth();renderCalendar();} function renderCalendar(){ const label=document.getElementById('calMonthLabel'); const grid=document.getElementById('calGrid'); if(!label||!grid)return; fetchShortNames(filteredTasks()); const monthName=new Date(calYear,calMonth,1).toLocaleDateString('en-CA',{month:'long',year:'numeric'}); label.textContent=monthName; const today=new Date(); const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`; function getTaskSpan(t){ const anchor=t.startDate||t.dueDate; if(!anchor)return null; const startStr=anchor.slice(0,10); const durDays=t.estimatedHours>0?Math.max(1,Math.ceil(t.estimatedHours/8)):1; if(durDays<=1&&!t.startDate)return{start:startStr,end:startStr}; const startD=new Date(startStr+'T12:00:00'); const endByDur=new Date(startD); endByDur.setDate(endByDur.getDate()+durDays-1); let endStr=ymd(endByDur); if(t.dueDate&&t.dueDate.slice(0,10)<endStr)endStr=t.dueDate.slice(0,10); return{start:startStr,end:endStr}; } const allT=filteredTasks(); const taskSpans=[]; allT.forEach(t=>{const s=getTaskSpan(t);if(s)taskSpans.push({t,start:s.start,end:s.end});}); const first=new Date(calYear,calMonth,1); const last=new Date(calYear,calMonth+1,0); let startPad=first.getDay(); const allCells=[]; for(let i=0;i<startPad;i++){const d=new Date(calYear,calMonth,1-startPad+i);allCells.push({ds:ymd(d),inMonth:false,dayNum:d.getDate()});} for(let d=1;d<=last.getDate();d++){const ds=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;allCells.push({ds,inMonth:true,dayNum:d});} const endPad=(7-allCells.length%7)%7; for(let i=1;i<=endPad;i++){const d=new Date(calYear,calMonth+1,i);allCells.push({ds:ymd(d),inMonth:false,dayNum:i});} function getLanesForWeek(weekDates){ const ws=weekDates[0],we=weekDates[6]; const wt=taskSpans.filter(s=>s.start<=we&&s.end>=ws); wt.sort((a,b)=>a.start<b.start?-1:a.start>b.start?1:0); const lanes=[]; wt.forEach(item=>{ const cs=item.start<ws?ws:item.start,ce=item.end>we?we:item.end; let li=lanes.findIndex(lane=>!lane.some(ex=>{const es=ex.start<ws?ws:ex.start,ee=ex.end>we?we:ex.end;return es<=ce&&ee>=cs;})); if(li===-1){li=lanes.length;lanes.push([]);} lanes[li].push(item); }); return lanes; } function chipHtmlForItem(item,ds,weekDates,bgColor,fgColor){ const{t}=item; const isSolo=item.start===item.end; const isSpanStart=ds===item.start,isSpanEnd=ds===item.end; const isWeekStart=ds===weekDates[0],isWeekEnd=ds===weekDates[6]; let br,gcls; if(isSolo){br='3px';gcls='';} else if((isSpanStart||isWeekStart)&&(isSpanEnd||isWeekEnd)){br='3px';gcls='';} else if(isSpanStart||isWeekStart){br='3px 0 0 3px';gcls=' gantt-start';} else if(isSpanEnd||isWeekEnd){br='0 3px 3px 0';gcls=' gantt-end';} else{br='0';gcls=' gantt-mid';} const showName=isSolo||isSpanStart||isWeekStart; return`<div class="cal-task-chip${gcls}" style="background:${bgColor};color:${fgColor};border-radius:${br}" onclick="openCalDetail('${t.id}')" title="${escHtml(t.name)}">${showName?escHtml(calShortName(t)):''}</div>`; } const DAY_HEADERS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; let html=`<div class="cal-grid">`; DAY_HEADERS.forEach(d=>{html+=`<div class="cal-header-cell">${d}</div>`;}); const MAX_SHOW=3; const numWeeks=allCells.length/7; for(let w=0;w<numWeeks;w++){ const week=allCells.slice(w*7,(w+1)*7); const weekDates=week.map(c=>c.ds); const lanes=getLanesForWeek(weekDates); const shownLanes=lanes.slice(0,MAX_SHOW); const overflowLanes=lanes.slice(MAX_SHOW); week.forEach(({ds,inMonth,dayNum})=>{ const wxDay=weatherForecast?(weatherForecast.find(w=>w.date===ds)||(ds===todayStr?weatherForecast[0]:null)):null; const daysAhead=(new Date(ds+'T12:00:00')-new Date(todayStr+'T12:00:00'))/(86400000); const wxHtml=wxDay&&ds>=todayStr&&daysAhead<=14 ?`<span title="${wxDay.alerts.length?wxDay.alerts.join(' · '):wmoIcon(wxDay.code).label}" style="font-size:13px;line-height:1;cursor:pointer;margin-left:auto;flex-shrink:0" onclick="event.stopPropagation();openDayWeatherDetail('${ds}')">${wmoIcon(wxDay.code).icon}</span>`:''; let chips=''; shownLanes.forEach(lane=>{ const item=lane.find(s=>ds>=s.start&&ds<=s.end); if(!item){chips+=`<div class="cal-chip-spacer"></div>`;return;} const{t}=item; const c=chipColors(t.lineage||''); const od=t.stage!=='complete'&&t.dueDate&&t.dueDate.slice(0,10)<todayStr; chips+=chipHtmlForItem(item,ds,weekDates,od?'#FEE2E2':c.bg,od?'#991B1B':c.fg); }); const overflowCount=overflowLanes.reduce((n,lane)=>n+(lane.some(s=>ds>=s.start&&ds<=s.end)?1:0),0); if(overflowCount>0)chips+=`<div class="cal-overflow" onclick="openCalDayList('${ds}')">+${overflowCount} more</div>`; const cellCls=`cal-cell${inMonth?'':' other-month'}${ds===todayStr?' today':''}`; html+=`<div class="${cellCls}"> <div style="display:flex;align-items:center;gap:2px"><div class="cal-day-num" style="cursor:pointer" onclick="openDayOverview('${ds}')">${dayNum}</div>${wxHtml}</div> ${chips} </div>`; }); } html+=`</div>`; grid.innerHTML=html; } // ── PUSH NOTIFICATIONS ── 
 function urlB64ToUint8(base64String){ const padding='='.repeat((4-base64String.length%4)%4); const b64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(b64); return Uint8Array.from([...raw].map(c=>c.charCodeAt(0))); } async function setupPush(){ if(!('serviceWorker' in navigator)||!('PushManager' in window))return; try{ const reg=await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready; const existing=await reg.pushManager.getSubscription(); if(existing){ await savePushSubscription(existing); updatePushBtn(true); } else { updatePushBtn(false); } } catch(e){ console.warn('Push setup:',e); } } async function togglePushSubscription(){ if(!('serviceWorker' in navigator)||!('PushManager' in window)){ toast('Push notifications are not supported in this browser.','error'); return; } const reg=await navigator.serviceWorker.ready; const existing=await reg.pushManager.getSubscription(); if(existing){ await existing.unsubscribe(); await sb.from('push_subscriptions').delete().eq('profile_id',currentUser.id).eq('endpoint',existing.endpoint); updatePushBtn(false); closeUserMenu(); return; } const permission=await Notification.requestPermission(); if(permission!=='granted'){toast('Notification permission denied.','error');return;} try{ const sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:urlB64ToUint8(VAPID_PUBLIC_KEY) }); await savePushSubscription(sub); updatePushBtn(true); closeUserMenu(); } catch(e){ console.error('Push subscribe:',e); toast('Could not enable notifications: '+e.message,'error'); } } async function savePushSubscription(sub){ if(!currentUser)return; const json=sub.toJSON(); const{endpoint,keys}=json; const{p256dh,auth}=keys||{}; if(!endpoint||!p256dh||!auth)return; await sb.from('push_subscriptions').upsert({ profile_id:currentUser.id, endpoint, p256dh, auth, updated_at:new Date().toISOString() },{onConflict:'profile_id,endpoint'}); } function updatePushBtn(enabled){ const btn=document.getElementById('pushToggleBtn'); if(btn)btn.textContent=enabled?'Disable push notifications':'Enable push notifications'; } // ── REALTIME ── 
 let _rtChannel=null,_rtPoll=null,_rtDebounce=null,_dupDebounce=null;
 function teardownRealtime(){
@@ -2444,6 +2474,378 @@ async function deleteWorkspace(){ const ws=workspaces.find(w=>w.id===wsMembersWo
 function openContractorModal(){ document.getElementById('contractorModal').style.display='flex'; document.getElementById('contractorMsg').textContent=''; document.getElementById('contractorNameInput').value=''; renderContractorList(); } function closeContractorModal(){ document.getElementById('contractorModal').style.display='none'; } function renderContractorList(){ const list=document.getElementById('contractorList'); const contractors=allProfiles.filter(p=>p.isContractor); if(!contractors.length){ list.innerHTML='<div style="font-size:13px;color:var(--text-tertiary);padding:4px 0">No contractors yet.</div>'; return; } list.innerHTML=contractors.map(p=>{ const c=avColor(p.name); return`<div style="display:flex;align-items:center;gap:10px;padding:7px 10px; border-radius:var(--radius-md);border:0.5px solid var(--border)"> <span style="width:28px;height:28px;border-radius:50%;background:${c.bg};color:${c.fg}; display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${initials(p.name)}</span> <span style="flex:1;font-size:13px">${escHtml(p.name)}</span> <span class="chip-tag">Contractor</span> <button onclick="deleteContractor('${p.id}')" style="border:none;background:transparent;color:var(--text-tertiary); cursor:pointer;font-size:16px;padding:0 2px;line-height:1" title="Remove">×</button> </div>`; }).join(''); } async function addContractor(){ const input=document.getElementById('contractorNameInput'); const msg=document.getElementById('contractorMsg'); const name=input.value.trim(); if(!name){msg.textContent='Please enter a name.';return;} if(allProfiles.some(p=>p.name.toLowerCase()===name.toLowerCase())){ msg.textContent='A person with that name already exists.';return; } const{data,error}=await sb.from('contractors').insert({name}).select().single(); if(error){console.error('addContractor:',error);msg.textContent='Error saving. Try again.';return;} msg.textContent=''; input.value=''; await loadProfiles(); renderContractorList(); populateAssigneePicker(getAssignees()); } async function deleteContractor(id){ if(!confirm('Remove this contractor? They will be removed from the assignee list.'))return; const{error}=await sb.from('contractors').delete().eq('id',id); if(error){console.error('deleteContractor:',error);return;} await loadProfiles(); renderContractorList(); populateAssigneePicker(getAssignees()); } // ── PASSWORD MODAL ── 
 function openPwdModal(){ document.getElementById('pwdNew').value=''; document.getElementById('pwdConfirm').value=''; document.getElementById('pwdMsg').textContent=''; document.getElementById('pwdModal').style.display='flex'; } function closePwdModal(){document.getElementById('pwdModal').style.display='none';} async function savePwd(){ const p=document.getElementById('pwdNew').value; const c=document.getElementById('pwdConfirm').value; const msg=document.getElementById('pwdMsg'); if(p.length<6){msg.textContent='Password must be at least 6 characters.';return;} if(p!==c){msg.textContent='Passwords do not match.';return;} msg.textContent='Saving…'; const{error}=await sb.auth.updateUser({password:p}); if(error){msg.textContent='Error: '+error.message;return;} msg.textContent='✓ Password saved!'; setTimeout(closePwdModal,1200); } // ── THEME ── 
 function applyTheme(theme){ document.body.classList.remove('theme-light','theme-dark'); if(theme)document.body.classList.add('theme-'+theme); const isDark=theme==='dark'||(theme===null&&window.matchMedia('(prefers-color-scheme:dark)').matches); const lbl=document.getElementById('themeToggleLabel'); if(lbl)lbl.textContent=isDark?'Switch to light mode':'Switch to dark mode'; } function toggleTheme(){ const current=localStorage.getItem('tt_theme'); const isDark=current==='dark'||(current===null&&window.matchMedia('(prefers-color-scheme:dark)').matches); const next=isDark?'light':'dark'; localStorage.setItem('tt_theme',next); applyTheme(next); } // Apply on load 
+
+// ── SCHEDULING HELPERS ──
+function getAvailableHours(profileId,dateStr){
+  // Off on this date if any time_off range covers it
+  if(workerTimeOff.some(t=>t.profileId===profileId&&dateStr>=t.dateFrom&&dateStr<=t.dateTo))return 0;
+  const dow=new Date(dateStr+'T12:00:00').getDay(); // 0=Sun…6=Sat
+  const sched=workerSchedules.find(s=>s.profileId===profileId&&s.dayOfWeek===dow);
+  if(!sched)return 0;
+  const[sh,sm]=sched.startTime.split(':').map(Number);
+  const[eh,em]=sched.endTime.split(':').map(Number);
+  return Math.max(0,(eh*60+em-sh*60-sm)/60);
+}
+function getWorkerWeeklyCapacity(profileId,startDateStr){
+  let total=0;
+  for(let i=0;i<7;i++){const d=new Date(startDateStr+'T12:00:00');d.setDate(d.getDate()+i);total+=getAvailableHours(profileId,ymd(d));}
+  return total;
+}
+
+// ── MY SCHEDULE MODAL ──
+function openScheduleModal(){
+  const overlay=document.getElementById('schedModalOverlay');
+  if(!overlay)return;
+  // Resolve workspace ID for My Schedule (not in 'all' mode)
+  const wsId=currentWorkspace?.id==='__all__'?(workspaces[0]?.id||null):currentWorkspace?.id;
+  if(!wsId){toast('Select a specific workspace to manage your schedule.','error');return;}
+  // Initialise _schedWeek from loaded data
+  _schedWeek=[0,1,2,3,4,5,6].map(()=>({active:false,startTime:'08:00',endTime:'16:00'}));
+  workerSchedules.filter(s=>s.profileId===currentUser.id&&s.workspaceId===wsId).forEach(s=>{
+    _schedWeek[s.dayOfWeek]={active:true,startTime:s.startTime,endTime:s.endTime};
+  });
+  overlay.classList.remove('hidden');
+  renderScheduleModal(wsId);
+}
+function closeScheduleModal(){
+  const overlay=document.getElementById('schedModalOverlay');
+  if(overlay)overlay.classList.add('hidden');
+}
+function renderScheduleModal(wsId){
+  const body=document.getElementById('schedModalBody');
+  if(!body)return;
+  const DAY_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  // Weekly grid
+  let html=`<div class="sched-modal-section-label">Regular availability</div>
+  <div class="sched-week-grid">`;
+  DAY_NAMES.forEach((name,i)=>{
+    const row=_schedWeek[i];
+    html+=`<div class="sched-week-row">
+      <label class="sched-day-toggle">
+        <input type="checkbox" ${row.active?'checked':''} onchange="_schedWeek[${i}].active=this.checked;renderScheduleModal('${wsId}')">
+        <span class="sched-day-name">${name}</span>
+      </label>
+      ${row.active?`
+      <input type="time" class="sched-time-input" value="${row.startTime}" onchange="_schedWeek[${i}].startTime=this.value">
+      <span style="font-size:12px;color:var(--text-tertiary)">–</span>
+      <input type="time" class="sched-time-input" value="${row.endTime}" onchange="_schedWeek[${i}].endTime=this.value">
+      `:'<span class="sched-day-off">Off</span>'}
+    </div>`;
+  });
+  html+=`</div>
+  <button class="btn-primary" style="margin-top:12px;width:100%" onclick="saveSchedule('${wsId}')">Save schedule</button>`;
+  // Time off section
+  const myTimeOff=workerTimeOff.filter(t=>t.profileId===currentUser.id&&t.workspaceId===wsId);
+  html+=`<div class="sched-modal-section-label" style="margin-top:20px">Days off</div>`;
+  if(myTimeOff.length){
+    html+=`<div class="sched-timeoff-list">`;
+    myTimeOff.forEach(t=>{
+      html+=`<div class="sched-timeoff-item">
+        <span class="sched-timeoff-dates">${fmtDate(t.dateFrom)}${t.dateTo!==t.dateFrom?' – '+fmtDate(t.dateTo):''}</span>
+        ${t.reason?`<span class="sched-timeoff-reason">${escHtml(t.reason)}</span>`:''}
+        <button onclick="deleteTimeOff('${t.id}','${wsId}')" class="sched-timeoff-del" title="Remove">✕</button>
+      </div>`;
+    });
+    html+=`</div>`;
+  } else {
+    html+=`<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:12px">No upcoming days off.</div>`;
+  }
+  html+=`<div class="sched-timeoff-form">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div>
+        <label class="form-label">From</label>
+        <input type="date" id="toDateFrom" class="form-input" style="width:140px" min="${todayStr()}">
+      </div>
+      <div>
+        <label class="form-label">To</label>
+        <input type="date" id="toDateTo" class="form-input" style="width:140px" min="${todayStr()}">
+      </div>
+      <div style="flex:1;min-width:120px">
+        <label class="form-label">Reason (optional)</label>
+        <input type="text" id="toReason" class="form-input" placeholder="Vacation, sick day…">
+      </div>
+    </div>
+    <button class="btn-secondary" style="margin-top:8px" onclick="addTimeOff('${wsId}')">+ Add days off</button>
+  </div>`;
+  body.innerHTML=html;
+}
+async function saveSchedule(wsId){
+  if(!wsId||!currentUser)return;
+  const DAY_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  // Upsert active days, delete inactive
+  for(let i=0;i<7;i++){
+    const row=_schedWeek[i];
+    if(row.active){
+      await sb.from('worker_schedules').upsert({
+        profile_id:currentUser.id,workspace_id:wsId,day_of_week:i,
+        start_time:row.startTime,end_time:row.endTime
+      },{onConflict:'profile_id,workspace_id,day_of_week'});
+    } else {
+      await sb.from('worker_schedules').delete()
+        .eq('profile_id',currentUser.id).eq('workspace_id',wsId).eq('day_of_week',i);
+    }
+  }
+  // Reload schedules
+  const{data:wd}=await sb.from('worker_schedules').select('*').eq('workspace_id',wsId);
+  workerSchedules=(wd||[]).map(r=>({id:r.id,profileId:r.profile_id,workspaceId:r.workspace_id,dayOfWeek:r.day_of_week,startTime:(r.start_time||'08:00').slice(0,5),endTime:(r.end_time||'16:00').slice(0,5)}));
+  toast('Schedule saved.');
+  closeScheduleModal();
+}
+async function addTimeOff(wsId){
+  const from=document.getElementById('toDateFrom').value;
+  const to=document.getElementById('toDateTo').value||from;
+  if(!from){toast('Select a start date.','error');return;}
+  if(to<from){toast('End date must be on or after start date.','error');return;}
+  const reason=document.getElementById('toReason').value.trim()||null;
+  const{error}=await sb.from('time_off').insert({profile_id:currentUser.id,workspace_id:wsId,date_from:from,date_to:to,reason});
+  if(error){toast('Error: '+error.message,'error');return;}
+  // Reload
+  const{data:tod}=await sb.from('time_off').select('*').gte('date_to',todayStr()).eq('workspace_id',wsId);
+  workerTimeOff=(tod||[]).map(r=>({id:r.id,profileId:r.profile_id,workspaceId:r.workspace_id,dateFrom:r.date_from,dateTo:r.date_to,reason:r.reason||''}));
+  toast('Days off added.');
+  renderScheduleModal(wsId);
+}
+async function deleteTimeOff(id,wsId){
+  if(!confirm('Remove this time-off entry?'))return;
+  await sb.from('time_off').delete().eq('id',id);
+  workerTimeOff=workerTimeOff.filter(t=>t.id!==id);
+  renderScheduleModal(wsId);
+}
+
+// ── GENERATE SCHEDULE ──
+function generateSchedule(){
+  _scheduleAllocated={};
+  const result={};
+  // Tasks eligible for scheduling: has profiled assignees, estimatedHours, not complete
+  const PRIORITY_ORDER={urgent:0,high:1,medium:2,low:3};
+  const schedulable=activeTasks.filter(t=>{
+    if(t.stage==='complete')return false;
+    if(!t.estimatedHours||t.estimatedHours<=0)return false;
+    const profiled=t.assignees&&t.assignees.some(name=>allProfiles.find(p=>!p.isContractor&&p.name===name));
+    return profiled;
+  }).slice().sort((a,b)=>{
+    const pa=PRIORITY_ORDER[a.priority]??2,pb=PRIORITY_ORDER[b.priority]??2;
+    if(pa!==pb)return pa-pb;
+    if(a.dueDate&&b.dueDate)return a.dueDate.localeCompare(b.dueDate);
+    return a.dueDate?-1:b.dueDate?1:0;
+  });
+  const today0=todayStr();
+  const MAX_DAYS=90;
+  for(const task of schedulable){
+    const profiledAssignees=(task.assignees||[])
+      .map(name=>allProfiles.find(p=>!p.isContractor&&p.name===name)).filter(Boolean);
+    if(!profiledAssignees.length)continue;
+    let startFrom=today0;
+    if(task.startDate&&task.startDate.slice(0,10)>today0)startFrom=task.startDate.slice(0,10);
+    let assigned=false;
+    for(let i=0;i<MAX_DAYS&&!assigned;i++){
+      const d=new Date(startFrom+'T12:00:00');d.setDate(d.getDate()+i);
+      const ds=ymd(d);
+      const fits=profiledAssignees.every(p=>{
+        const avail=getAvailableHours(p.id,ds);
+        const allocated=(_scheduleAllocated[p.id]||{})[ds]||0;
+        return(avail-allocated)>0;
+      });
+      if(fits){
+        result[task.id]=ds;
+        profiledAssignees.forEach(p=>{
+          if(!_scheduleAllocated[p.id])_scheduleAllocated[p.id]={};
+          _scheduleAllocated[p.id][ds]=(_scheduleAllocated[p.id][ds]||0)+task.estimatedHours;
+        });
+        assigned=true;
+      }
+    }
+  }
+  _generatedSchedule=result;
+  return result;
+}
+function runGenerateSchedule(){
+  if(!workerSchedules.length){toast('No worker schedules set. Use "My schedule" to set availability first.','error');return;}
+  const count=Object.keys(generateSchedule()).length;
+  renderSchedule();
+  toast(`Scheduled ${count} task${count===1?'':'s'}. Review below, then click Apply dates.`);
+}
+async function applyScheduleDates(){
+  if(!_generatedSchedule||!Object.keys(_generatedSchedule).length){toast('Nothing to apply.','error');return;}
+  const count=Object.keys(_generatedSchedule).length;
+  if(!confirm(`Apply suggested start dates to ${count} task${count===1?'':'s'}?`))return;
+  for(const[taskId,dateStr]of Object.entries(_generatedSchedule)){
+    await sb.from('tasks').update({start_date:dateStr}).eq('id',taskId);
+    await logUpdate(taskId,`Start date set to ${fmtDate(dateStr)} by schedule planner`);
+  }
+  _generatedSchedule=null;_scheduleAllocated={};
+  await loadData();
+  toast(`${count} start date${count===1?'':'s'} applied.`);
+}
+
+function openTaskFromSchedule(id){
+  // Return to list view, then open task detail
+  const schedEl=document.getElementById('scheduleView');
+  if(schedEl)schedEl.style.display='none';
+  const listEl=document.getElementById('listView');
+  if(listEl)listEl.style.display='';
+  currentView='list';
+  openDetail(id);
+}
+async function schedDropById(taskId,dateStr){
+  if(!taskId||!dateStr)return;
+  if(_generatedSchedule&&_generatedSchedule[taskId]!==undefined){
+    _generatedSchedule[taskId]=dateStr;renderSchedule();return;
+  }
+  const{error}=await sb.from('tasks').update({start_date:dateStr}).eq('id',taskId);
+  if(error){toast('Error updating date: '+error.message,'error');return;}
+  const t=activeTasks.find(t=>t.id===taskId);
+  if(t){t.startDate=dateStr;await logUpdate(taskId,`Start date moved to ${fmtDate(dateStr)} via schedule`);}
+  renderSchedule();
+}
+async function schedDrop(event,dateStr){
+  await schedDropById(event.dataTransfer.getData('text/plain'),dateStr);
+}
+function schedTouchStart(e,taskId){
+  _touchDragId=taskId;_touchDragging=false;
+  _touchStartX=e.touches[0].clientX;_touchStartY=e.touches[0].clientY;
+  document.addEventListener('touchmove',_schedTouchMove,{passive:false});
+  document.addEventListener('touchend',_schedTouchEnd,{once:true});
+}
+function _schedTouchMove(e){
+  const t=e.touches[0];
+  if(!_touchDragging&&Math.hypot(t.clientX-_touchStartX,t.clientY-_touchStartY)>8){
+    _touchDragging=true;
+    const g=document.createElement('div');
+    g.className='sched-task-chip';g.id='schedTouchGhost';
+    g.style.cssText='position:fixed;opacity:0.8;pointer-events:none;z-index:9999;';
+    g.textContent='Moving…';document.body.appendChild(g);_touchGhost=g;
+  }
+  if(_touchDragging){
+    e.preventDefault();
+    if(_touchGhost){_touchGhost.style.left=(t.clientX-40)+'px';_touchGhost.style.top=(t.clientY-20)+'px';}
+    document.querySelectorAll('.sched-drop-target').forEach(c=>c.classList.remove('sched-drop-target'));
+    const el=document.elementFromPoint(t.clientX,t.clientY);
+    const card=el?.closest('[data-sched-date]');
+    if(card)card.classList.add('sched-drop-target');
+  }
+}
+function _schedTouchEnd(e){
+  document.removeEventListener('touchmove',_schedTouchMove);
+  if(_touchGhost){_touchGhost.remove();_touchGhost=null;}
+  document.querySelectorAll('.sched-drop-target').forEach(c=>c.classList.remove('sched-drop-target'));
+  if(_touchDragging&&_touchDragId){
+    const t=e.changedTouches[0];
+    const el=document.elementFromPoint(t.clientX,t.clientY);
+    const card=el?.closest('[data-sched-date]');
+    if(card&&card.dataset.schedDate)schedDropById(_touchDragId,card.dataset.schedDate);
+  }
+  _touchDragId=null;_touchDragging=false;
+}
+
+// ── SCHEDULE VIEW ──
+function renderSchedule(){
+  const el=document.getElementById('scheduleView');
+  if(!el)return;
+  // 14-day window: always start from the Sunday of the current week
+  const startD=new Date(todayStr()+'T12:00:00');
+  startD.setDate(startD.getDate()+_scheduleWeekOffset*7);
+  startD.setDate(startD.getDate()-startD.getDay()); // rewind to Sunday
+  const days=[];
+  for(let i=0;i<14;i++){const d=new Date(startD);d.setDate(d.getDate()+i);days.push(ymd(d));}
+  const fmt=ds=>new Date(ds+'T12:00:00').toLocaleDateString('en-CA',{month:'short',day:'numeric'});
+  const rangeLabel=`${fmt(days[0])} – ${fmt(days[13])}, ${new Date(days[0]+'T12:00:00').getFullYear()}`;
+  // Map tasks to days (generated schedule takes priority over task.startDate)
+  const tasksByDay={};days.forEach(d=>{tasksByDay[d]=[];});
+  activeTasks.forEach(t=>{
+    if(t.stage==='complete')return;
+    const ds=(_generatedSchedule&&_generatedSchedule[t.id])||t.startDate?.slice(0,10)||null;
+    if(ds&&tasksByDay[ds])tasksByDay[ds].push(t);
+  });
+  // Workload pressure (week 1 only)
+  const profiled=allProfiles.filter(p=>!p.isContractor&&workerSchedules.some(s=>s.profileId===p.id));
+  let workloadHtml='';
+  if(profiled.length){
+    workloadHtml=`<div class="sched-workload">
+      <div class="sched-section-label">Workload — ${fmt(days[0])} to ${fmt(days[6])}</div>`;
+    profiled.forEach(p=>{
+      const cap=getWorkerWeeklyCapacity(p.id,days[0]);
+      if(!cap)return;
+      let alloc=0;
+      days.slice(0,7).forEach(d=>{alloc+=(_scheduleAllocated[p.id]||{})[d]||0;});
+      // Count task hours for this worker from task.startDate too
+      if(!_generatedSchedule){
+        days.slice(0,7).forEach(d=>{
+          activeTasks.filter(t=>t.startDate?.slice(0,10)===d&&(t.assignees||[]).some(n=>n===p.name)&&t.estimatedHours)
+            .forEach(t=>alloc+=t.estimatedHours);
+        });
+      }
+      const pct=Math.min(100,Math.round(alloc/cap*100));
+      const barColor=pct>=90?'var(--danger)':pct>=70?'#F59E0B':'var(--accent)';
+      workloadHtml+=`<div class="sched-worker-row">
+        <div class="sched-worker-name">${escHtml(p.name)}</div>
+        <div class="sched-bar-wrap"><div class="sched-bar" style="width:${pct}%;background:${barColor}"></div></div>
+        <div class="sched-worker-hrs">${alloc}/${cap}h</div>
+      </div>`;
+    });
+    workloadHtml+=`</div>`;
+  }
+  // Day cards
+  let daysHtml=`<div class="sched-days-grid">`;
+  days.forEach(ds=>{
+    const dayTasks=tasksByDay[ds];
+    const fc=getForecastForDate&&getForecastForDate(ds);
+    const wxIcon=fc?wmoIcon(fc.code).icon:'';
+    const wxBad=fc&&fc.bad;
+    const isToday=ds===todayStr();
+    const _d=new Date(ds+'T12:00:00');
+    const dayLbl=_d.toLocaleDateString('en-CA',{weekday:'short'})+' '+_d.getDate()+(isToday?' · Today':'');
+    daysHtml+=`<div class="sched-day-card${isToday?' sched-today':''}${wxBad?' sched-bad-wx':''}"
+      data-sched-date="${ds}"
+      ondragover="event.preventDefault();this.classList.add('sched-drop-target')"
+      ondragleave="this.classList.remove('sched-drop-target')"
+      ondrop="this.classList.remove('sched-drop-target');schedDrop(event,'${ds}')">
+      <div class="sched-day-header">
+        <span class="sched-day-label${isToday?' sched-today-label':''}">${dayLbl}</span>
+        ${wxIcon?`<span title="${wxBad?'Possible bad weather':'Good weather'}" style="font-size:13px">${wxIcon}</span>`:''}
+      </div>`;
+    if(!dayTasks.length){
+      daysHtml+=`<div class="sched-no-tasks">No tasks</div>`;
+    } else {
+      dayTasks.forEach(t=>{
+        const c=chipColors(t.lineage||'');
+        const isSugg=_generatedSchedule&&_generatedSchedule[t.id]===ds;
+        daysHtml+=`<div class="sched-task-chip${isSugg?' sched-chip-suggested':''}"
+          style="background:${c.bg};color:${c.fg}"
+          draggable="true"
+          ondragstart="event.dataTransfer.setData('text/plain','${t.id}');this.classList.add('sched-dragging')"
+          ondragend="this.classList.remove('sched-dragging')"
+          ontouchstart="schedTouchStart(event,'${t.id}')"
+          onclick="openTaskFromSchedule('${t.id}')" title="${escHtml(t.name)}">
+          <span class="sched-task-name">${escHtml(listShortName(t)||t.name)}</span>
+          ${t.estimatedHours?`<span class="sched-task-hrs">${t.estimatedHours}h</span>`:''}
+        </div>`;
+      });
+    }
+    daysHtml+=`</div>`;
+  });
+  daysHtml+=`</div>`;
+  el.innerHTML=`
+    <div class="sched-header">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:17px;font-weight:700">📅 Schedule</h2>
+        <div style="display:flex;align-items:center;gap:4px">
+          <button class="sched-nav-btn" onclick="_scheduleWeekOffset--;renderSchedule()">‹</button>
+          <span class="sched-range-label">${rangeLabel}</span>
+          <button class="sched-nav-btn" onclick="_scheduleWeekOffset++;renderSchedule()">›</button>
+        </div>
+        ${_scheduleWeekOffset!==0?`<button class="sched-nav-btn" onclick="_scheduleWeekOffset=0;renderSchedule()">Today</button>`:''}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="closeUserMenu();openScheduleModal()">⚙ My schedule</button>
+        <button class="btn-secondary" style="font-size:12px;padding:5px 10px" onclick="runGenerateSchedule()">🔮 Generate plan</button>
+        ${_generatedSchedule&&Object.keys(_generatedSchedule).length?`<button class="btn-primary" style="font-size:12px;padding:5px 10px" onclick="applyScheduleDates()">✓ Apply dates</button>`:''}
+      </div>
+    </div>
+    ${workloadHtml}
+    ${daysHtml}`;
+}
+
 applyTheme(localStorage.getItem('tt_theme')); const _savedView=localStorage.getItem('tt_view'); if(_savedView==='calendar')switchView('calendar'); // ── INIT ──
 initA11yObserver();
 initAuth();
