@@ -2399,7 +2399,7 @@ function switchToView(v){
     document.getElementById('snAutomations')?.classList.add('active');
     renderAutomations();
   } else if(v==='schedule'){
-    const el=document.getElementById('scheduleView');if(el)el.style.display='flex';
+    const el=document.getElementById('scheduleView');if(el)el.style.display='block';
     document.getElementById('snSchedule')?.classList.add('active');
     renderSchedule();
   }
