@@ -601,6 +601,72 @@
     .auto-toggle input:checked + .auto-toggle-slider{background:#1D9E75}
     .auto-toggle input:checked + .auto-toggle-slider:before{transform:translateX(14px)}
 
+    /* ── SCHEDULE VIEW ─────────────────────────────────────────── */
+    .sched-header{display:flex;align-items:flex-start;justify-content:space-between;
+      gap:12px;flex-wrap:wrap;margin-bottom:16px}
+    .sched-nav-btn{background:none;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);
+      padding:4px 10px;cursor:pointer;color:var(--text-primary);font-size:13px;line-height:1.4}
+    .sched-nav-btn:hover{background:var(--bg-secondary)}
+    .sched-range-label{font-size:13px;font-weight:500;min-width:190px;text-align:center;
+      color:var(--text-primary)}
+    .sched-section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;
+      color:var(--text-tertiary);margin-bottom:10px}
+    /* Workload panel */
+    .sched-workload{background:var(--bg-secondary);border:0.5px solid var(--border-md);
+      border-radius:var(--radius-md);padding:14px 16px;margin-bottom:16px}
+    .sched-worker-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+    .sched-worker-row:last-child{margin-bottom:0}
+    .sched-worker-name{width:80px;font-size:12px;font-weight:500;overflow:hidden;
+      text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+    .sched-bar-wrap{flex:1;height:8px;background:var(--bg-tertiary);border-radius:4px;overflow:hidden}
+    .sched-bar{height:100%;border-radius:4px;transition:width .4s ease}
+    .sched-worker-hrs{font-size:11px;color:var(--text-secondary);min-width:52px;text-align:right;flex-shrink:0}
+    /* Day cards grid */
+    .sched-days-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+    @media(max-width:900px){.sched-days-grid{grid-template-columns:repeat(4,1fr)}}
+    @media(max-width:540px){.sched-days-grid{grid-template-columns:repeat(2,1fr)}}
+    .sched-day-card{background:var(--bg-secondary);border:0.5px solid var(--border-md);
+      border-radius:var(--radius-md);padding:8px 10px;min-height:72px}
+    .sched-today{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,var(--bg-secondary))}
+    .sched-bad-wx{background:color-mix(in srgb,#EF4444 5%,var(--bg-secondary))}
+    .sched-day-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+    .sched-day-label{font-size:11px;font-weight:600;color:var(--text-secondary)}
+    .sched-today-label{color:var(--accent)!important}
+    .sched-no-tasks{font-size:11px;color:var(--text-tertiary);font-style:italic}
+    .sched-task-chip{display:flex;align-items:center;gap:4px;border-radius:4px;
+      padding:3px 6px;margin-bottom:3px;cursor:pointer;transition:opacity .15s;
+      border:1px solid transparent}
+    .sched-task-chip:hover{opacity:.8}
+    .sched-chip-suggested{border-style:dashed!important;border-color:currentColor!important;opacity:.85}
+    .sched-task-name{font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sched-task-hrs{font-size:10px;opacity:.65;flex-shrink:0}
+    /* My Schedule modal */
+    .sched-modal-section-label{font-size:11px;font-weight:700;text-transform:uppercase;
+      letter-spacing:.5px;color:var(--text-tertiary);margin-bottom:8px}
+    .sched-week-grid{display:flex;flex-direction:column;gap:6px}
+    .sched-week-row{display:flex;align-items:center;gap:10px;padding:6px 10px;
+      background:var(--bg-secondary);border-radius:var(--radius-sm)}
+    .sched-day-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;min-width:60px}
+    .sched-day-toggle input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
+    .sched-day-name{font-size:13px;font-weight:500;min-width:28px}
+    .sched-day-off{font-size:12px;color:var(--text-tertiary);font-style:italic;margin-left:4px}
+    .sched-time-input{font-size:12px;padding:4px 6px;border:0.5px solid var(--border-md);
+      border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);
+      width:88px}
+    .sched-timeoff-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+    .sched-timeoff-item{display:flex;align-items:center;gap:8px;padding:6px 10px;
+      background:var(--bg-secondary);border-radius:var(--radius-sm);font-size:12px}
+    .sched-timeoff-dates{font-weight:500;flex-shrink:0}
+    .sched-timeoff-reason{color:var(--text-tertiary);flex:1;overflow:hidden;
+      text-overflow:ellipsis;white-space:nowrap}
+    .sched-timeoff-del{border:none;background:none;cursor:pointer;color:var(--text-tertiary);
+      font-size:14px;padding:0 2px;line-height:1;flex-shrink:0}
+    .sched-timeoff-del:hover{color:var(--danger)}
+    .sched-timeoff-form{border-top:0.5px solid var(--border-md);padding-top:14px;margin-top:4px}
+    .sched-dragging{opacity:.4;cursor:grabbing}
+    .sched-task-chip{cursor:grab}
+    .sched-drop-target{border-color:var(--accent)!important;background:color-mix(in srgb,var(--accent) 8%,var(--bg-secondary))!important}
+
     /* LOADING OVERLAY */
     .app-loading{position:fixed;inset:0;background:var(--bg-secondary);z-index:600;
       display:flex;align-items:center;justify-content:center}
