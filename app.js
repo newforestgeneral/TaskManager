@@ -93,7 +93,7 @@ let _generatedSchedule=null; // {taskId: dateStr} from generateSchedule()
 let _scheduleAllocated={}; // {profileId: {dateStr: hoursAllocated}}
 let _scheduleWeekOffset=0; // weeks offset from today for schedule view
 let _schedWeek=[0,1,2,3,4,5,6].map(()=>({active:false,startTime:'08:00',endTime:'16:00'}));
-let _touchDragId=null,_touchGhost=null,_touchStartX=0,_touchStartY=0,_touchDragging=false;
+let _touchDragId=null,_touchGhost=null,_touchStartX=0,_touchStartY=0,_touchDragging=false,_touchHoldTimer=null;
 
 const LINEAGES=['Land & Forest','Farm & Garden','Building Improvements','Other Building','Site Infrastructure','Housekeeping','Kitchen','Dining','Administration'];
 let voiceState={recording:false,mediaRecorder:null,chunks:[],stream:null,releaseTimer:null};
@@ -2704,28 +2704,35 @@ async function schedDrop(event,dateStr){
 function schedTouchStart(e,taskId){
   _touchDragId=taskId;_touchDragging=false;
   _touchStartX=e.touches[0].clientX;_touchStartY=e.touches[0].clientY;
+  _touchHoldTimer=setTimeout(()=>{
+    _touchDragging=true;
+    if(navigator.vibrate)navigator.vibrate(40);
+    const g=document.createElement('div');
+    g.className='sched-task-chip';g.id='schedTouchGhost';
+    g.style.cssText='position:fixed;opacity:0.8;pointer-events:none;z-index:9999;';
+    g.textContent='Moving…';document.body.appendChild(g);_touchGhost=g;
+    _touchGhost.style.left=(_touchStartX-40)+'px';_touchGhost.style.top=(_touchStartY-20)+'px';
+  },500);
   document.addEventListener('touchmove',_schedTouchMove,{passive:false});
   document.addEventListener('touchend',_schedTouchEnd,{once:true});
 }
 function _schedTouchMove(e){
   const t=e.touches[0];
-  if(!_touchDragging&&Math.hypot(t.clientX-_touchStartX,t.clientY-_touchStartY)>8){
-    _touchDragging=true;
-    const g=document.createElement('div');
-    g.className='sched-task-chip';g.id='schedTouchGhost';
-    g.style.cssText='position:fixed;opacity:0.8;pointer-events:none;z-index:9999;';
-    g.textContent='Moving…';document.body.appendChild(g);_touchGhost=g;
+  if(!_touchDragging){
+    if(Math.hypot(t.clientX-_touchStartX,t.clientY-_touchStartY)>10){
+      clearTimeout(_touchHoldTimer);_touchHoldTimer=null;
+    }
+    return;
   }
-  if(_touchDragging){
-    e.preventDefault();
-    if(_touchGhost){_touchGhost.style.left=(t.clientX-40)+'px';_touchGhost.style.top=(t.clientY-20)+'px';}
-    document.querySelectorAll('.sched-drop-target').forEach(c=>c.classList.remove('sched-drop-target'));
-    const el=document.elementFromPoint(t.clientX,t.clientY);
-    const card=el?.closest('[data-sched-date]');
-    if(card)card.classList.add('sched-drop-target');
-  }
+  e.preventDefault();
+  if(_touchGhost){_touchGhost.style.left=(t.clientX-40)+'px';_touchGhost.style.top=(t.clientY-20)+'px';}
+  document.querySelectorAll('.sched-drop-target').forEach(c=>c.classList.remove('sched-drop-target'));
+  const el=document.elementFromPoint(t.clientX,t.clientY);
+  const card=el?.closest('[data-sched-date]');
+  if(card)card.classList.add('sched-drop-target');
 }
 function _schedTouchEnd(e){
+  clearTimeout(_touchHoldTimer);_touchHoldTimer=null;
   document.removeEventListener('touchmove',_schedTouchMove);
   if(_touchGhost){_touchGhost.remove();_touchGhost=null;}
   document.querySelectorAll('.sched-drop-target').forEach(c=>c.classList.remove('sched-drop-target'));
